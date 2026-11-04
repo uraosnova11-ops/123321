@@ -1,22 +1,23 @@
 import asyncio
 import os
 import re
+import traceback
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
 from aiogram.exceptions import TelegramBadRequest
 
-# --- 1. НАСТРОЙКИ БОТА ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-TARGET_CHAT_ID = -1003747516067  # ID твоей группы для проверки
-INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"  # Ссылка на группу
-active_users = set()  # Хранит тех, кто нажал /ofteam
-ADMIN_ID = None  # Твой ID для получения ошибок (заполнится после /start)
+TARGET_CHAT_ID = -1003747516067
+INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
+active_users = set()
 
-# --- 2. СЛОВАРИ ПЕРЕВОДОВ ---
+# ВАЖНО: Замени 123456789 на свой реальный ID (узнать можно у @userinfobot)
+ADMIN_ID = 123456789 
+
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
@@ -52,40 +53,27 @@ MESSAGES = {
     }
 }
 
-# --- 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def get_pretty_name(slug):
-    """Превращает DurovsCap-1234 в Durovs Cap"""
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
 async def is_subscribed(user_id: int) -> bool:
-    """Проверяет, есть ли юзер в группе"""
     try:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception:
-        return True # Если бот не админ, пропускаем (чтобы не блокировать всё)
+        return True 
 
-# --- 4. КОМАНДЫ /start И /ofteam ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     global ADMIN_ID
-    ADMIN_ID = message.from_user.id 
+    ADMIN_ID = message.from_user.id
     
     if not await is_subscribed(message.from_user.id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]])
         await message.answer("⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>", reply_markup=keyboard, parse_mode="HTML")
         return
-        
-    text = (
-        "<b>Как начать:</b>\n"
-        "Отправь /ofteam — и доступ будет выдан.\n\n"
-        "<b>Формат оффера:</b>\n"
-        "<code>/of ССЫЛКА ЦЕНА ВАЛЮТА ЯЗЫК</code>\n\n"
-        "Валюты: stars / gram\n"
-        "Языки: ru / en / ua / ar"
-    )
-    await message.answer(text, parse_mode="HTML")
+    await message.answer("<b>Как начать:</b>\nОтправь /ofteam\n\n<b>Формат оффера:</b>\n<code>/of ССЫЛКА ЦЕНА ВАЛЮТА ЯЗЫК</code>", parse_mode="HTML")
 
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
@@ -96,48 +84,43 @@ async def cmd_ofteam(message: types.Message):
         else:
             active_users.add(user_id)
             await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
-    else:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]])
-        await message.answer("⚠️ Вы не подписаны на группу!", reply_markup=keyboard)
 
-# --- 5. БЛОКИРОВКА /of В ЛИЧКЕ ---
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- 6. СОЗДАНИЕ ОФФЕРА (В БИЗНЕС-ЧАТАХ) ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
+    print(f"\n[LOG] Получена команда от {message.from_user.id}: {message.text}")
     business_connection_id = message.business_connection_id
     
     if not business_connection_id:
-        if ADMIN_ID:
-            try: await bot.send_message(ADMIN_ID, "⚠️ <b>Ошибка:</b> Нет business_connection_id.")
-            except: pass
+        print("[ERROR] Нет business_connection_id")
         return
 
     parts = message.text.split()
     if len(parts) < 4:
+        print("[ERROR] Неверный формат команды")
         return
 
     link = parts[1]
     if not link.startswith("http"):
         link = "https://" + link
-        
     try:
         amount = int(parts[2])
     except ValueError:
+        print("[ERROR] Сумма не число")
         return
     
     currency = parts[3].lower()
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     lang = parts[4].lower() if len(parts) > 4 else "ru"
-    
-    if lang not in MESSAGES: 
-        lang = "ru"
+    if lang not in MESSAGES: lang = "ru"
 
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
-    if not match: return
+    if not match: 
+        print("[ERROR] Неверная ссылка")
+        return
     
     gift_slug = match.group(1)
     pretty_name = get_pretty_name(gift_slug)
@@ -147,8 +130,10 @@ async def handle_offer_command(message: types.Message):
     caption_text = msg_data["offer"].format(username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
 
     try:
+        print(f"[LOG] Удаляем команду...")
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
         
+        print(f"[LOG] Отправляем оффер...")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
             InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}")
@@ -162,15 +147,19 @@ async def handle_offer_command(message: types.Message):
             parse_mode="HTML", 
             link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
         )
+        print(f"[SUCCESS] Оффер отправлен {username}")
         
     except Exception as e:
-        error_text = f"⚠️ <b>Ошибка в чате с {username}</b>\nПричина: <code>{e}</code>"
+        # ВЫВОДИМ ПОЛНУЮ ОШИБКУ В ЛОГИ GITHUB
+        print(f"!!! [CRITICAL ERROR] Ошибка при отправке оффера для {username} !!!")
+        traceback.print_exc()
+        
+        # И пытаемся отправить тебе в личку
+        error_text = f"⚠️ <b>Ошибка в чате с {username}</b>\n<code>{e}</code>"
         if ADMIN_ID:
             try: await bot.send_message(ADMIN_ID, error_text, parse_mode="HTML")
             except: pass
-        print(f"Ошибка: {e}")
 
-# --- 7. ОБРАБОТКА КНОПОК ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -201,25 +190,14 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
             new_keyboard = None
 
-        kwargs = {
-            "chat_id": callback.message.chat.id, 
-            "text": new_text, 
-            "reply_markup": new_keyboard, 
-            "parse_mode": "HTML", 
-            "link_preview_options": LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
-        }
-        
-        if business_connection_id: 
-            kwargs["business_connection_id"] = business_connection_id
-            
+        kwargs = {"chat_id": callback.message.chat.id, "text": new_text, "reply_markup": new_keyboard, "parse_mode": "HTML", "link_preview_options": LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)}
+        if business_connection_id: kwargs["business_connection_id"] = business_connection_id
         await bot.send_message(**kwargs)
         await callback.answer()
-        
     except Exception as e:
         print(f"Ошибка кнопки: {e}")
         await callback.answer("Ошибка", show_alert=True)
 
-# --- 8. ЗАПУСК ---
 async def main():
     print("Бот запущен...")
     await dp.start_polling(bot)
