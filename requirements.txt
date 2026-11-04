@@ -1,4 +1,4 @@
 aiogram==3.31.0
 aiohttp==3.9.5
-lottie==0.7.0
-pycairo
+rlottie-python[full]
+Pillow
