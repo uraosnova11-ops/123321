@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 import gzip
-import io
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
@@ -35,12 +34,8 @@ async def handle_offer_command(message: types.Message):
     gift_slug = match.group(1)
 
     try:
-        # 1. Удаляем команду (исправленный вызов)
-        await bot.delete_message(
-            chat_id=message.chat.id,
-            message_id=message.message_id,
-            business_connection_id=business_connection_id
-        )
+        # 1. Удаляем команду через встроенный метод сообщения
+        await message.delete()
 
         # 2. Скачиваем и отправляем анимацию
         animation_url = f"https://nft.fragment.com/gift/{gift_slug}.lottie.json"
