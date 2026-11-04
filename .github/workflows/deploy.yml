@@ -5,10 +5,15 @@ on:
     - cron: '0 */5 * * *'  # Запуск каждые 5 часов
   workflow_dispatch:       # Возможность запустить вручную
 
+# ЭТА НАСТРОЙКА АВТОМАТИЧЕСКИ УБИВАЕТ СТАРЫЕ ЗАПУСКИ
+concurrency:
+  group: telegram-bot
+  cancel-in-progress: true
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 290   # Выключаем за 10 минут до 5-часового лимита GitHub
+    timeout-minutes: 290
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
