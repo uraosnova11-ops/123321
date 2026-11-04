@@ -8,7 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
 # Вставьте токен вашего бота (полученный у @BotFather)
-BOT_TOKEN = "ВАШ_ТОКЕН_БОТА"
+BOT_TOKEN = "9160359866:AAF6koDqA6m0o3ugR_gQHCZTTF25fZqFDuk"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
