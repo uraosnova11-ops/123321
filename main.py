@@ -15,7 +15,7 @@ TARGET_CHAT_ID = -1003747516067
 INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
 
 # ТВОЙ ЛИЧНЫЙ ID (получи через @userinfobot)
-ADMIN_ID = 123456789 
+ADMIN_ID = 7839521040
 
 active_users = set()
 
