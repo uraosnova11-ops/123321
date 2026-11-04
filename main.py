@@ -1,66 +1,91 @@
 import asyncio
 import os
 import re
-import gzip
+import json
+import subprocess
+import tempfile
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+import lottie
+from lottie.exporters.cairo import export_png
+from lottie.importers.core import import_tgs
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+def convert_lottie_to_mp4(lottie_bytes: bytes, output_path: str, fps: int = 30):
+    """Конвертирует Lottie JSON в MP4 без звука через рендеринг кадров и ffmpeg."""
+    # Загружаем анимацию
+    animation = lottie.parsers.tgs.parse_tgs(lottie_bytes)
+    
+    # Создаём временную папку для кадров
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Рендерим каждый кадр в PNG
+        for i, frame in enumerate(animation.render(fps=fps)):
+            png_path = os.path.join(tmpdir, f"frame_{i:04d}.png")
+            export_png(frame, png_path)
+        
+        # Собираем PNG в MP4 с помощью ffmpeg
+        subprocess.run([
+            "ffmpeg", "-y", "-framerate", str(fps),
+            "-i", os.path.join(tmpdir, "frame_%04d.png"),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", # выравнивание размеров
+            output_path
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
-    # Отладочный вывод: покажет в логах, что бот увидел команду
-    print(f"==================================================")
     print(f"!!! ПОЛУЧЕНА КОМАНДА: {message.text} !!!")
-    print(f"==================================================")
-
     business_connection_id = message.business_connection_id
     if not business_connection_id:
-        print("!!! ОШИБКА: НЕТ business_connection_id !!!")
         return
 
     parts = message.text.split()
     if len(parts) < 3:
-        print("!!! ОШИБКА: НЕВЕРНЫЙ ФОРМАТ КОМАНДЫ !!!")
         return
 
     link = parts[1]
     try:
         amount = int(parts[2])
     except ValueError:
-        print("!!! ОШИБКА: СУММА НЕ ЯВЛЯЕТСЯ ЧИСЛОМ !!!")
         return
 
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match:
-        print("!!! ОШИБКА: НЕВЕРНАЯ ССЫЛКА !!!")
         return
     
     gift_slug = match.group(1)
 
     try:
         # 1. Удаляем команду
-        print(f"Удаляем сообщение {message.message_id}...")
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[message.message_id]
         )
 
-        # 2. Готовим картинку подарка
-        photo_url = f"https://nft.fragment.com/gift/{gift_slug}.webp"
-        
-        # Форматируем имя для красоты (DurovsCap-1234 -> Durov's Cap #1234)
+        # 2. Скачиваем Lottie
+        lottie_url = f"https://nft.fragment.com/gift/{gift_slug}.lottie.json"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(lottie_url) as resp:
+                if resp.status != 200:
+                    raise Exception("Не удалось скачать анимацию подарка")
+                lottie_bytes = await resp.read()
+
+        # 3. Конвертируем в MP4
+        mp4_path = f"/tmp/{gift_slug}.mp4"
+        convert_lottie_to_mp4(lottie_bytes, mp4_path)
+        print("MP4 готов.")
+
+        # 4. Формируем текст и кнопки
         raw_name = gift_slug.split('-')[0]
         pretty_name = re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name) 
         display_name = f"{pretty_name} #{gift_slug.split('-')[-1]}"
-        
         username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
 
-        # Текст, как на реальном оффере
         caption_text = (
             f"<b>Telegram</b>\n"
             f"<b>{display_name}</b>\n\n"
@@ -69,7 +94,6 @@ async def handle_offer_command(message: types.Message):
             f"<b>{amount} ⭐</b> за подарок <b>{pretty_name}</b>."
         )
 
-        # Кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Показать подарок", url=link)],
             [
@@ -78,39 +102,23 @@ async def handle_offer_command(message: types.Message):
             ]
         ])
 
-        # 3. Отправляем визуальный оффер (Фото + Текст + Кнопки)
-        print("Отправляем фото с оффером...")
-        await bot.send_photo(
+        # 5. Отправляем ОДНИМ сообщением: анимация + текст + кнопки
+        video_file = FSInputFile(mp4_path)
+        await bot.send_animation(
             chat_id=message.chat.id,
-            photo=photo_url,
+            animation=video_file,
             caption=caption_text,
             reply_markup=keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML"
         )
+        print("Оффер отправлен одним сообщением!")
 
-        # 4. Отправляем анимацию стикером следом (если нужно)
-        try:
-            animation_url = f"https://nft.fragment.com/gift/{gift_slug}.lottie.json"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(animation_url) as resp:
-                    if resp.status == 200:
-                        lottie_bytes = await resp.read()
-                        tgs_bytes = gzip.compress(lottie_bytes)
-                        sticker_file = BufferedInputFile(tgs_bytes, filename=f"{gift_slug}.tgs")
-                        await bot.send_sticker(
-                            chat_id=message.chat.id,
-                            sticker=sticker_file,
-                            business_connection_id=business_connection_id
-                        )
-                        print("Стикер отправлен.")
-        except Exception as sticker_error:
-            print(f"Не удалось отправить стикер: {sticker_error}")
-
-        print("ОФФЕР УСПЕШНО ОТПРАВЛЕН!")
+        # Удаляем временный файл
+        os.remove(mp4_path)
 
     except Exception as e:
-        print(f"!!! ОШИБКА ПРИ ОТПРАВКЕ: {e} !!!")
+        print(f"!!! ОШИБКА: {e} !!!")
         try:
             await bot.send_message(
                 chat_id=message.chat.id,
@@ -126,7 +134,7 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     await callback.answer("Это визуальная имитация оффера.", show_alert=True)
 
 async def main():
-    print("Бот запущен и готов к работе...")
+    print("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
