@@ -1,39 +1,40 @@
 import asyncio
 import os
 import re
-import json
 import subprocess
 import tempfile
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-import lottie
-from lottie.exporters.cairo import export_png
-from lottie.importers.core import import_tgs
+from rlottie_python import LottieAnimation
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-def convert_lottie_to_mp4(lottie_bytes: bytes, output_path: str, fps: int = 30):
-    """Конвертирует Lottie JSON в MP4 без звука через рендеринг кадров и ffmpeg."""
-    # Загружаем анимацию
-    animation = lottie.parsers.tgs.parse_tgs(lottie_bytes)
+def convert_lottie_to_mp4(lottie_bytes: bytes, output_path: str):
+    """Конвертирует Lottie JSON в MP4 с помощью rlottie-python и ffmpeg."""
+    # Загружаем анимацию из байтов
+    anim = LottieAnimation.from_data(data=lottie_bytes.decode('utf-8'))
+    total_frames = anim.lottie_animation_get_totalframe()
+    framerate = anim.lottie_animation_get_framerate()
     
-    # Создаём временную папку для кадров
+    if framerate <= 0:
+        framerate = 30
+
     with tempfile.TemporaryDirectory() as tmpdir:
         # Рендерим каждый кадр в PNG
-        for i, frame in enumerate(animation.render(fps=fps)):
+        for i in range(total_frames):
             png_path = os.path.join(tmpdir, f"frame_{i:04d}.png")
-            export_png(frame, png_path)
+            anim.save_frame(png_path, frame_num=i)
         
         # Собираем PNG в MP4 с помощью ffmpeg
         subprocess.run([
-            "ffmpeg", "-y", "-framerate", str(fps),
+            "ffmpeg", "-y", "-framerate", str(framerate),
             "-i", os.path.join(tmpdir, "frame_%04d.png"),
             "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", # выравнивание размеров
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
             output_path
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -42,6 +43,7 @@ async def handle_offer_command(message: types.Message):
     print(f"!!! ПОЛУЧЕНА КОМАНДА: {message.text} !!!")
     business_connection_id = message.business_connection_id
     if not business_connection_id:
+        print("!!! ОШИБКА: НЕТ business_connection_id !!!")
         return
 
     parts = message.text.split()
