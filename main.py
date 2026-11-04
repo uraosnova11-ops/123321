@@ -1,98 +1,126 @@
 import asyncio
-import os
 import re
 import gzip
 import io
-import random
 import aiohttp
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from pyrogram.raw.functions.payments import SendStarGiftOffer
-from pyrogram.raw.types import StarsAmount
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-SESSION_STRING = os.getenv("SESSION_STRING")
+# Вставьте токен вашего бота (полученный у @BotFather)
+BOT_TOKEN = "ВАШ_ТОКЕН_БОТА"
 
-app = Client(
-    "offer_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    session_string=SESSION_STRING
-)
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 
-@app.on_message(filters.regex(r"^/of\s+") & filters.me)
-async def handle_offer_command(client: Client, message: Message):
-    text = message.text or message.caption
-    if not text:
+@dp.business_message(F.text.startswith("/of"))
+async def handle_offer_command(message: types.Message):
+    # Получаем ID бизнес-подключения, чтобы отвечать от вашего имени
+    business_connection_id = message.business_connection_id
+    if not business_connection_id:
         return
 
-    parts = text.split()
+    # Парсим команду: /of t.me/nft/DurovsCap-1234 500
+    parts = message.text.split()
     if len(parts) < 3:
-        return await message.edit_text("❌ Формат: `/of <ссылка> <сумма>`")
-    
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="❌ Формат: `/of <ссылка_на_NFT> <сумма>`",
+            business_connection_id=business_connection_id
+        )
+        return
+
     link = parts[1]
     try:
         amount = int(parts[2])
     except ValueError:
-        return await message.edit_text("❌ Сумма должна быть числом.")
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="❌ Сумма должна быть числом.",
+            business_connection_id=business_connection_id
+        )
+        return
 
+    # Извлекаем слаг подарка (например, DurovsCap-1234)
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match:
-        return await message.edit_text("❌ Неверная ссылка на NFT-подарок.")
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="❌ Неверная ссылка на NFT-подарок.",
+            business_connection_id=business_connection_id
+        )
+        return
     
     gift_slug = match.group(1)
 
     try:
-        # Удаляем команду
-        await message.delete()
+        # 1. Удаляем исходное сообщение с командой от имени пользователя
+        await bot.delete_business_messages(
+            business_connection_id=business_connection_id,
+            message_ids=[message.message_id]
+        )
 
-        # Пытаемся отправить анимацию (не критично, если не получится)
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"https://fragment.com/api/gift/{gift_slug}") as resp:
-                    if resp.status == 200:
-                        gift_data = await resp.json()
-                        animation_url = gift_data.get("animation_url") or gift_data.get("model", {}).get("animation_url")
-                        if animation_url:
-                            async with session.get(animation_url) as anim_resp:
-                                lottie_bytes = await anim_resp.read()
-                            tgs_bytes = gzip.compress(lottie_bytes)
-                            await client.send_sticker(
-                                chat_id=message.chat.id,
-                                sticker=io.BytesIO(tgs_bytes)
-                            )
-        except Exception:
-            pass
-
-        # ОТПРАВКА ОФФЕРА (Используем raw API)
-        random_id = random.randint(-2**63, 2**63 - 1)
+        # 2. Получаем анимацию подарка с Fragment
+        animation_url = f"https://nft.fragment.com/gift/{gift_slug}.lottie.json"
         
-        # ВНИМАНИЕ: Метод SendStarGiftOffer не требует указания peer (получателя).
-        # Он автоматически отправляется текущему владельцу подарка по его slug.
-        await client.invoke(
-            SendStarGiftOffer(
-                slug=gift_slug,
-                price=StarsAmount(amount=amount),
-                duration=86400, # 24 часа
-                random_id=random_id
-            )
+        async with aiohttp.ClientSession() as session:
+            async with session.get(animation_url) as resp:
+                if resp.status == 200:
+                    lottie_bytes = await resp.read()
+                    
+                    # 3. Конвертируем Lottie JSON в .tgs (GZIP)
+                    tgs_bytes = gzip.compress(lottie_bytes)
+                    
+                    # 4. Отправляем анимированный стикер от имени пользователя
+                    sticker_file = BufferedInputFile(tgs_bytes, filename=f"{gift_slug}.tgs")
+                    await bot.send_sticker(
+                        chat_id=message.chat.id,
+                        sticker=sticker_file,
+                        business_connection_id=business_connection_id
+                    )
+
+        # 5. Отправляем визуальный текст оффера с кнопками
+        # Извлекаем имя из слага (например, DurovsCap-1234 -> Durov's Cap #1234)
+        collection_name = gift_slug.split('-')[0]
+        # Простая визуализация, можно улучшить
+        display_name = f"{collection_name} #{gift_slug.split('-')[-1]}" 
+
+        offer_text = (
+            f"Пользователь (@{message.from_user.username}) "
+            f"предлагает вам\n"
+            f"**{amount} ⭐** за подарок **{display_name}**."
         )
 
-        status_msg = await client.send_message(
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Отклонить", callback_data="fake_decline"),
+                InlineKeyboardButton(text="Принять", callback_data="fake_accept")
+            ]
+        ])
+
+        await bot.send_message(
             chat_id=message.chat.id,
-            text=f"✅ Оффер на **{amount} ⭐** за подарок `{gift_slug}` успешно отправлен владельцу!"
+            text=offer_text,
+            reply_markup=keyboard,
+            business_connection_id=business_connection_id
         )
-        await asyncio.sleep(10)
-        await status_msg.delete()
 
     except Exception as e:
         print(f"Ошибка: {e}")
-        try:
-            await client.send_message(chat_id=message.chat.id, text=f"❌ Ошибка: {e}")
-        except Exception:
-            pass
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text=f"❌ Ошибка: {e}",
+            business_connection_id=business_connection_id
+        )
+
+# Обработчик нажатий на кнопки (заглушка)
+@dp.callback_query(F.data.startswith("fake_"))
+async def handle_fake_buttons(callback: types.CallbackQuery):
+    await callback.answer("Это визуальная имитация оффера.", show_alert=True)
+
+async def main():
+    print("Бот запущен...")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    print("Бот запущен...")
-    app.run()
+    asyncio.run(main())
