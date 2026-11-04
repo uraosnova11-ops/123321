@@ -95,7 +95,8 @@ async def cmd_start(message: types.Message):
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
     if await is_subscribed(message.from_user.id):
-        await message.answer("✅ <b>Доступ выдан!</b>\nТеперь вы можете использовать команду /of в деловых чатах.")
+        # Измененный текст
+        await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
@@ -128,7 +129,6 @@ async def handle_offer_command(message: types.Message):
         return
 
     parts = message.text.split()
-    # Проверяем: /of, ссылка, цена, валюта (минимум 4 части)
     if len(parts) < 4:
         return
 
@@ -141,7 +141,6 @@ async def handle_offer_command(message: types.Message):
     currency = parts[3].lower()
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     
-    # Язык (если не указан, берем ru)
     lang = parts[4].lower() if len(parts) > 4 else "ru"
     if lang not in MESSAGES:
         lang = "ru"
@@ -154,7 +153,6 @@ async def handle_offer_command(message: types.Message):
     pretty_name = get_pretty_name(gift_slug)
     username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
 
-    # Получаем текст на нужном языке
     msg_data = MESSAGES[lang]
     caption_text = msg_data["offer"].format(
         username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name
@@ -166,7 +164,6 @@ async def handle_offer_command(message: types.Message):
             message_ids=[message.message_id]
         )
 
-        # В callback_data передаем действие, слаг, сумму, валюту и язык
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
@@ -201,7 +198,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         await callback.answer("Вы вышли из группы!", show_alert=True)
         return
 
-    # accept:slug:amount:currency:lang
     data_parts = callback.data.split(":")
     action = data_parts[0]
     gift_slug = data_parts[1]
