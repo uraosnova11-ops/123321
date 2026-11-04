@@ -2,6 +2,8 @@ import asyncio
 import os
 import re
 import gzip
+import io
+import random
 import aiohttp
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -33,7 +35,10 @@ async def handle_offer_command(client: Client, message: Message):
         return await message.edit_text("❌ Формат: `/of <ссылка> <сумма>`")
     
     link = parts[1]
-    amount = int(parts[2])
+    try:
+        amount = int(parts[2])
+    except ValueError:
+        return await message.edit_text("❌ Сумма должна быть числом.")
 
     # Извлекаем слаг подарка (например, DurovsCap-1234)
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
@@ -47,19 +52,20 @@ async def handle_offer_command(client: Client, message: Message):
         await message.delete()
 
         # 2. Получаем Lottie-анимацию подарка с Fragment
-        # Используем публичный эндпоинт фрагмента для получения метаданных
+        animation_url = None
+        owner_id = None
+        
         async with aiohttp.ClientSession() as session:
             # Запрос к Fragment за информацией о подарке
             async with session.get(f"https://fragment.com/api/gift/{gift_slug}") as resp:
                 if resp.status == 200:
                     gift_data = await resp.json()
                     animation_url = gift_data.get("animation_url") or gift_data.get("model", {}).get("animation_url")
-                else:
-                    animation_url = None
+                    # Пытаемся получить ID владельца (если он есть в ответе)
+                    owner_id = gift_data.get("owner", {}).get("id") 
 
-        # 3. Отправляем визуальный оффер и сам запрос в чат
+        # 3. Отправляем визуальный оффер (стикер)
         if animation_url:
-            # Скачиваем анимацию
             async with aiohttp.ClientSession() as session:
                 async with session.get(animation_url) as resp:
                     lottie_bytes = await resp.read()
@@ -67,22 +73,28 @@ async def handle_offer_command(client: Client, message: Message):
             # Конвертируем в Telegram Sticker (.tgs)
             tgs_bytes = gzip.compress(lottie_bytes)
             
-            # Отправляем .tgs прямо в чат (визуальная часть)
+            # Отправляем .tgs прямо в чат
             await client.send_sticker(
                 chat_id=message.chat.id,
-                sticker=tgs_bytes,
+                sticker=io.BytesIO(tgs_bytes),
                 reply_to_message_id=message.reply_to_message_id
             )
 
         # 4. Отправляем оффер через MTProto
-        # Получаем информацию о владельце подарка (упрощенно через slug)
-        # В реальности нужно запросить peer владельца, если оффер отправляется в ЛС
-        # Здесь отправляем оффер от вашего аккаунта
+        # Генерируем случайный ID для защиты от дублей
+        random_id = random.randint(-2**63, 2**63 - 1)
+        
+        # ВНИМАНИЕ: Если owner_id не найден, отправляем оффер в текущий чат (для теста).
+        # В реальной работе тут должен быть ID владельца подарка.
+        target_peer = owner_id if owner_id else message.chat.id
+
         await client.invoke(
             SendStarGiftOffer(
+                peer=target_peer,
                 slug=gift_slug,
-                price=StarsAmount(amount=amount * 10**9),  # Перевод в нано-звезды
+                price=StarsAmount(amount=amount * 10**9), # Перевод в нано-звезды
                 duration=86400, # 24 часа
+                random_id=random_id,
                 allow_paid_stars=0
             )
         )
@@ -97,8 +109,11 @@ async def handle_offer_command(client: Client, message: Message):
 
     except Exception as e:
         print(f"Ошибка: {e}")
-        # В случае ошибки возвращаем сообщение, чтобы вы знали
-        await client.send_message(chat_id=message.chat.id, text=f"❌ Ошибка: {e}")
+        # В случае ошибки пишем в чат, чтобы вы знали
+        try:
+            await client.send_message(chat_id=message.chat.id, text=f"❌ Ошибка: {e}")
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     print("Бот запущен...")
