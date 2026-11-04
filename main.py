@@ -14,18 +14,10 @@ dp = Dispatcher()
 TARGET_CHAT_ID = -1003747516067
 INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
 
-# ТВОЙ ЛИЧНЫЙ ID (получи через @userinfobot)
-ADMIN_ID = 7839521040
-
+# Множество для хранения ID тех, кто уже запросил доступ (сбрасывается при перезапуске)
 active_users = set()
 
-# Функция для отправки логов тебе в личку
-async def log_to_admin(text: str):
-    try:
-        await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML")
-    except Exception as e:
-        print(f"Не удалось отправить лог админу: {e}")
-
+# Словарь с переводами
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
@@ -70,16 +62,13 @@ async def is_subscribed(user_id: int) -> bool:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
+        print(f"Ошибка проверки подписки: {e}")
         return False
 
 # --- 1. СТАРТ И /ofteam ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    user = message.from_user
-    # Логируем вход
-    await log_to_admin(f"👤 <b>Новый визит!</b>\nИмя: {user.first_name}\nЮзер: @{user.username}\nID: <code>{user.id}</code>\nПодписан: {await is_subscribed(user.id)}")
-
-    if not await is_subscribed(user.id):
+    if not await is_subscribed(message.from_user.id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
         ])
@@ -110,15 +99,12 @@ async def cmd_start(message: types.Message):
 async def cmd_ofteam(message: types.Message):
     if await is_subscribed(message.from_user.id):
         user_id = message.from_user.id
-        user = message.from_user
         
         if user_id in active_users:
             await message.answer("✅ Доступ уже активен. Можно отправлять оферы.")
         else:
             active_users.add(user_id)
             await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
-            # Логируем получение доступа
-            await log_to_admin(f"🔓 <b>Получен доступ!</b>\nИмя: {user.first_name}\nЮзер: @{user.username}\nID: <code>{user.id}</code>")
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
@@ -205,8 +191,6 @@ async def handle_offer_command(message: types.Message):
                 prefer_large_media=True
             )
         )
-        # Логируем создание оффера
-        await log_to_admin(f"🤝 <b>Создан оффер!</b>\nПодарок: {pretty_name}\nЦена: {amount} {symbol}\nЯзык: {lang}")
 
     except Exception as e:
         print(f"Ошибка отправки: {e}")
@@ -250,13 +234,9 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
             ])
-            # Логируем принятие
-            await log_to_admin(f"✅ <b>Оффер ПРИНЯТ!</b>\nПодарок: {pretty_name}\nЦена: {amount} {symbol}")
         else:
             new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
             new_keyboard = None
-            # Логируем отказ
-            await log_to_admin(f"❌ <b>Оффер ОТКЛОНЕН!</b>\nПодарок: {pretty_name}\nЦена: {amount} {symbol}")
 
         kwargs = {
             "chat_id": callback.message.chat.id,
