@@ -3,11 +3,13 @@ import os
 import re
 import gzip
 import io
+import random
 import aiohttp
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from pyrogram.raw.functions.payments import SendStarGiftOffer
+from pyrogram.raw.types import StarsAmount
 
-# Данные берутся из переменных окружения (Secrets в GitHub)
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
@@ -35,7 +37,6 @@ async def handle_offer_command(client: Client, message: Message):
     except ValueError:
         return await message.edit_text("❌ Сумма должна быть числом.")
 
-    # Извлекаем слаг подарка (например, DurovsCap-1234)
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match:
         return await message.edit_text("❌ Неверная ссылка на NFT-подарок.")
@@ -43,10 +44,10 @@ async def handle_offer_command(client: Client, message: Message):
     gift_slug = match.group(1)
 
     try:
-        # 1. Мгновенно удаляем команду из чата
+        # Удаляем команду
         await message.delete()
 
-        # 2. Пытаемся скачать и отправить анимацию (если получится)
+        # Пытаемся отправить анимацию (не критично, если не получится)
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"https://fragment.com/api/gift/{gift_slug}") as resp:
@@ -59,26 +60,28 @@ async def handle_offer_command(client: Client, message: Message):
                             tgs_bytes = gzip.compress(lottie_bytes)
                             await client.send_sticker(
                                 chat_id=message.chat.id,
-                                sticker=io.BytesIO(tgs_bytes),
-                                reply_to_message_id=message.reply_to_message_id
+                                sticker=io.BytesIO(tgs_bytes)
                             )
         except Exception:
-            pass # Если анимация не скачалась, просто идём дальше
+            pass
 
-        # 3. ОТПРАВКА ОФФЕРА (используем встроенный метод Pyrofork)
-        # ВНИМАНИЕ: Для теста отправляем оффер в текущий чат (в "Избранное").
-        # В реальной работе здесь должен быть owner_id владельца подарка.
-        await client.send_gift_purchase_offer(
-            owner_id=message.chat.id,  # Кому отправляем (сейчас - текущий чат)
-            gift_name=gift_slug,       # Слаг подарка
-            price=amount,              # Сумма в звездах
-            duration=86400             # 24 часа
+        # ОТПРАВКА ОФФЕРА (Используем raw API)
+        random_id = random.randint(-2**63, 2**63 - 1)
+        
+        # ВНИМАНИЕ: Метод SendStarGiftOffer не требует указания peer (получателя).
+        # Он автоматически отправляется текущему владельцу подарка по его slug.
+        await client.invoke(
+            SendStarGiftOffer(
+                slug=gift_slug,
+                price=StarsAmount(amount=amount),
+                duration=86400, # 24 часа
+                random_id=random_id
+            )
         )
 
-        # 4. Подтверждение в чат
         status_msg = await client.send_message(
             chat_id=message.chat.id,
-            text=f"✅ Оффер на **{amount} ⭐** за подарок `{gift_slug}` отправлен!"
+            text=f"✅ Оффер на **{amount} ⭐** за подарок `{gift_slug}` успешно отправлен владельцу!"
         )
         await asyncio.sleep(10)
         await status_msg.delete()
