@@ -14,6 +14,9 @@ dp = Dispatcher()
 TARGET_CHAT_ID = -1003747516067
 INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
 
+# Множество для хранения ID тех, кто уже запросил доступ
+active_users = set()
+
 # Словарь с переводами
 MESSAGES = {
     "ru": {
@@ -95,8 +98,15 @@ async def cmd_start(message: types.Message):
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
     if await is_subscribed(message.from_user.id):
-        # Измененный текст
-        await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
+        user_id = message.from_user.id
+        
+        if user_id in active_users:
+            # Если ID уже есть в множестве, значит это повторный запрос
+            await message.answer("✅ Доступ уже активен. Можно отправлять оферы.")
+        else:
+            # Добавляем ID в множество и выдаем первый ответ
+            active_users.add(user_id)
+            await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
