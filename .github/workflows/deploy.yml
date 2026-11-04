@@ -5,7 +5,6 @@ on:
     - cron: '0 */5 * * *'  # Запуск каждые 5 часов
   workflow_dispatch:       # Возможность запустить вручную
 
-# Защита от двойного запуска (убивает старый процесс, если нажать Run дважды)
 concurrency:
   group: telegram-bot
   cancel-in-progress: true
@@ -13,7 +12,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 290   # Ограничение по времени
+    timeout-minutes: 290
     
     steps:
       - name: Checkout repository
@@ -23,12 +22,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      # УСТАНОВКА FFMPEG (нужен для сборки видео из кадров)
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies
         run: |
