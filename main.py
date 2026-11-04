@@ -3,19 +3,15 @@ import os
 import re
 import gzip
 import io
-import random
 import aiohttp
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from pyrogram.raw.functions.payments import SendStarGiftOffer
-from pyrogram.raw.types import StarsAmount
 
 # Данные берутся из переменных окружения (Secrets в GitHub)
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 SESSION_STRING = os.getenv("SESSION_STRING")
 
-# Инициализация User-bot
 app = Client(
     "offer_bot",
     api_id=API_ID,
@@ -29,7 +25,6 @@ async def handle_offer_command(client: Client, message: Message):
     if not text:
         return
 
-    # Парсинг: /of t.me/nft/DurovsCap-1234 500
     parts = text.split()
     if len(parts) < 3:
         return await message.edit_text("❌ Формат: `/of <ссылка> <сумма>`")
@@ -48,68 +43,48 @@ async def handle_offer_command(client: Client, message: Message):
     gift_slug = match.group(1)
 
     try:
-        # 1. Мгновенно удаляем команду из чата (чтобы никто не видел)
+        # 1. Мгновенно удаляем команду из чата
         await message.delete()
 
-        # 2. Получаем Lottie-анимацию подарка с Fragment
-        animation_url = None
-        owner_id = None
-        
-        async with aiohttp.ClientSession() as session:
-            # Запрос к Fragment за информацией о подарке
-            async with session.get(f"https://fragment.com/api/gift/{gift_slug}") as resp:
-                if resp.status == 200:
-                    gift_data = await resp.json()
-                    animation_url = gift_data.get("animation_url") or gift_data.get("model", {}).get("animation_url")
-                    # Пытаемся получить ID владельца (если он есть в ответе)
-                    owner_id = gift_data.get("owner", {}).get("id") 
-
-        # 3. Отправляем визуальный оффер (стикер)
-        if animation_url:
+        # 2. Пытаемся скачать и отправить анимацию (если получится)
+        try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(animation_url) as resp:
-                    lottie_bytes = await resp.read()
-            
-            # Конвертируем в Telegram Sticker (.tgs)
-            tgs_bytes = gzip.compress(lottie_bytes)
-            
-            # Отправляем .tgs прямо в чат
-            await client.send_sticker(
-                chat_id=message.chat.id,
-                sticker=io.BytesIO(tgs_bytes),
-                reply_to_message_id=message.reply_to_message_id
-            )
+                async with session.get(f"https://fragment.com/api/gift/{gift_slug}") as resp:
+                    if resp.status == 200:
+                        gift_data = await resp.json()
+                        animation_url = gift_data.get("animation_url") or gift_data.get("model", {}).get("animation_url")
+                        if animation_url:
+                            async with session.get(animation_url) as anim_resp:
+                                lottie_bytes = await anim_resp.read()
+                            tgs_bytes = gzip.compress(lottie_bytes)
+                            await client.send_sticker(
+                                chat_id=message.chat.id,
+                                sticker=io.BytesIO(tgs_bytes),
+                                reply_to_message_id=message.reply_to_message_id
+                            )
+        except Exception:
+            pass # Если анимация не скачалась, просто идём дальше
 
-        # 4. Отправляем оффер через MTProto
-        # Генерируем случайный ID для защиты от дублей
-        random_id = random.randint(-2**63, 2**63 - 1)
-        
-        # ВНИМАНИЕ: Если owner_id не найден, отправляем оффер в текущий чат (для теста).
-        # В реальной работе тут должен быть ID владельца подарка.
-        target_peer = owner_id if owner_id else message.chat.id
-
-        await client.invoke(
-            SendStarGiftOffer(
-                peer=target_peer,
-                slug=gift_slug,
-                price=StarsAmount(amount=amount * 10**9), # Перевод в нано-звезды
-                duration=86400, # 24 часа
-                random_id=random_id,
-                allow_paid_stars=0
-            )
+        # 3. ОТПРАВКА ОФФЕРА (используем встроенный метод Pyrofork)
+        # ВНИМАНИЕ: Для теста отправляем оффер в текущий чат (в "Избранное").
+        # В реальной работе здесь должен быть owner_id владельца подарка.
+        await client.send_gift_purchase_offer(
+            owner_id=message.chat.id,  # Кому отправляем (сейчас - текущий чат)
+            gift_name=gift_slug,       # Слаг подарка
+            price=amount,              # Сумма в звездах
+            duration=86400             # 24 часа
         )
 
-        # Подтверждение в чат
+        # 4. Подтверждение в чат
         status_msg = await client.send_message(
             chat_id=message.chat.id,
-            text=f"✅ Оффер на **{amount} ⭐** за подарок `{gift_slug}` успешно отправлен!"
+            text=f"✅ Оффер на **{amount} ⭐** за подарок `{gift_slug}` отправлен!"
         )
         await asyncio.sleep(10)
         await status_msg.delete()
 
     except Exception as e:
         print(f"Ошибка: {e}")
-        # В случае ошибки пишем в чат, чтобы вы знали
         try:
             await client.send_message(chat_id=message.chat.id, text=f"❌ Ошибка: {e}")
         except Exception:
