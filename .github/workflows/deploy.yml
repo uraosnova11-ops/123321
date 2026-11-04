@@ -5,7 +5,7 @@ on:
     - cron: '0 */5 * * *'  # Запуск каждые 5 часов
   workflow_dispatch:       # Возможность запустить вручную
 
-# Защита от двойного запуска (убивает старый процесс, если вы нажали Run дважды)
+# Защита от двойного запуска (убивает старый процесс, если нажать Run дважды)
 concurrency:
   group: telegram-bot
   cancel-in-progress: true
@@ -13,7 +13,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 290   # Ограничение по времени (чуть меньше 5 часов)
+    timeout-minutes: 290   # Ограничение по времени
     
     steps:
       - name: Checkout repository
@@ -24,11 +24,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      # УСТАНОВКА FFMPEG И CAIRO (для конвертации Lottie в MP4)
+      # УСТАНОВКА FFMPEG (нужен для сборки видео из кадров)
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libcairo2-dev pkg-config
+          sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies
         run: |
