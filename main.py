@@ -1,6 +1,8 @@
 import asyncio
 import os
 import re
+import random
+import string
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
@@ -113,7 +115,7 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- УДАЛЕНИЕ И ОТПРАВКА (САМЫЙ СТАБИЛЬНЫЙ СПОСОБ) ---
+# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ЧЕРЕЗ QUERY-ПАРАМЕТР ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -122,13 +124,13 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     action, gift_slug, amount, currency, lang = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4]
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
-    link = f"https://t.me/nft/{gift_slug}"
+    # Генерируем случайный параметр для обхода кэша (cache-buster)
+    cache_buster = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
+    link = f"https://t.me/nft/{gift_slug}?v={cache_buster}"
+    
     pretty_name = get_pretty_name(gift_slug)
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
-
-    # 1. Мгновенно убираем "часики" с кнопки, чтобы не бесило
-    await callback.answer()
 
     if action == "accept":
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
@@ -146,34 +148,31 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_keyboard = None
         alert_text = None
 
-    # 2. УДАЛЯЕМ СТАРОЕ СООБЩЕНИЕ
     try:
-        if business_connection_id:
-            await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
+        # Меняем сообщение с новым URL для сброса кэша
+        await bot.edit_message_text(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            text=new_text,
+            reply_markup=new_keyboard,
+            business_connection_id=business_connection_id,
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            # Если пользователь нажал дважды, просто показываем окно
+            pass
         else:
-            await callback.message.delete()
+            print(f"Ошибка изменения: {e}")
     except Exception as e:
-        print(f"Не удалось удалить: {e}")
+        print(f"Неизвестная ошибка: {e}")
 
-    # 3. ОТПРАВЛЯЕМ НОВОЕ СООБЩЕНИЕ (с анимацией и кнопкой)
-    try:
-        kwargs = {
-            "chat_id": callback.message.chat.id,
-            "text": new_text,
-            "reply_markup": new_keyboard,
-            "parse_mode": "HTML",
-            "link_preview_options": LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
-        }
-        if business_connection_id: 
-            kwargs["business_connection_id"] = business_connection_id
-
-        await bot.send_message(**kwargs)
-    except Exception as e:
-        print(f"Ошибка отправки: {e}")
-
-    # 4. ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО
+    # Показываем окно
     if alert_text:
         await callback.answer(alert_text, show_alert=True)
+    else:
+        await callback.answer()
 
 async def main():
     print("Бот запущен...")
