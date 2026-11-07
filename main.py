@@ -13,15 +13,13 @@ from aiogram.exceptions import TelegramBadRequest
 # --- НАСТРОЙКИ ИЗ СЕКРЕТОВ GITHUB ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GIST_ID = os.getenv("GIST_ID")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GIST_TOKEN = os.getenv("GIST_TOKEN") # ИСПОЛЬЗУЕМ НОВЫЙ ТОКЕН
 
-# Безопасное получение ADMIN_ID
 try:
     ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 except ValueError:
     ADMIN_ID = 0
 
-# Стандартный получатель
 DEFAULT_TARGET = "Gifts_Replayer"
 
 bot = Bot(token=BOT_TOKEN)
@@ -70,10 +68,10 @@ def get_pretty_name(slug):
 
 # --- РАБОТА С GIST (БАЗА ДАННЫХ) ---
 async def get_gist_data():
-    if not GIST_ID or not GITHUB_TOKEN:
-        return None, "Ошибка: GIST_ID или GITHUB_TOKEN не заданы в Secrets!"
+    if not GIST_ID or not GIST_TOKEN:
+        return None, "Ошибка: GIST_ID или GIST_TOKEN не заданы в Secrets!"
     
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {"Authorization": f"token {GIST_TOKEN}"}
     url = f"https://api.github.com/gists/{GIST_ID}"
     
     try:
@@ -90,7 +88,7 @@ async def get_gist_data():
         return None, f"Ошибка сети: {e}"
 
 async def update_gist_data(new_data: dict):
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {"Authorization": f"token {GIST_TOKEN}"}
     url = f"https://api.github.com/gists/{GIST_ID}"
     payload = {
         "files": {
@@ -110,14 +108,13 @@ async def update_gist_data(new_data: dict):
     except Exception as e:
         return False, f"Ошибка сети: {e}"
 
-# --- АДМИН ПАНЕЛЬ С ПРОВЕРКОЙ ---
+# --- АДМИН ПАНЕЛЬ ---
 @dp.message(Command("my_id"))
 async def cmd_my_id(message: types.Message):
     await message.answer(f"Ваш ID: <code>{message.from_user.id}</code>\nID Админа в боте: <code>{ADMIN_ID}</code>", parse_mode="HTML")
 
 @dp.message(Command("set_target"))
 async def cmd_set_target(message: types.Message):
-    # ЖЕСТКАЯ ПРОВЕРКА НА АДМИНА
     if message.from_user.id != ADMIN_ID:
         return await message.answer(
             f"❌ <b>Отказано в доступе.</b>\n\n"
