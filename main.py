@@ -12,13 +12,17 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+# --- НАСТРОЙКА ПОЛУЧАТЕЛЯ ---
+TARGET_USERNAME = "lyizi002" 
+# -----------------------------
+
 active_users = set()
 ADMIN_ID = None 
 
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зачисления звёзд.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/{target_username}'>@{target_username}</a> для зачисления звёзд.",
         "declined": "❌ Оффер на <b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен.",
         "btn_accept": "Принять",
         "btn_decline": "Отклонить",
@@ -26,7 +30,7 @@ MESSAGES = {
     },
     "en": {
         "offer": "User ({username})\noffers you\n<b>{amount} {symbol}</b> for the gift <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> to receive stars.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/{target_username}'>@{target_username}</a> to receive stars.",
         "declined": "❌ Offer of <b>{amount} {symbol}</b> for <a href='{link}'>{pretty_name}</a> declined.",
         "btn_accept": "Accept",
         "btn_decline": "Decline",
@@ -34,7 +38,7 @@ MESSAGES = {
     },
     "ua": {
         "offer": "Користувач ({username})\nпропонує вам\n<b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> для зарахування зірок.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/{target_username}'>@{target_username}</a> для зарахування зірок.",
         "declined": "❌ Офер на <b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a> відхилено.",
         "btn_accept": "Прийняти",
         "btn_decline": "Відхилити",
@@ -42,7 +46,7 @@ MESSAGES = {
     },
     "ar": {
         "offer": "المستخدم ({username})\nيعرض عليك\n<b>{amount} {symbol}</b> مقابل الهدية <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/Gifts_Replayer'>@Gifts_Replayer</a> لاستلام النجوم.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/{target_username}'>@{target_username}</a> لاستلام النجوم.",
         "declined": "❌ تم رفض العرض بمبلغ <b>{amount} {symbol}</b> مقابل <a href='{link}'>{pretty_name}</a>.",
         "btn_accept": "قبول",
         "btn_decline": "رفض",
@@ -54,11 +58,27 @@ def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
 
+# --- ТОЛЬКО ЗДЕСЬ ИЗМЕНЕН ТЕКСТ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     global ADMIN_ID
     ADMIN_ID = message.from_user.id 
-    await message.answer("Бот запущен и готов к работе.")
+    
+    text = (
+        "<b>Как начать:</b>\n"
+        "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
+        "<b>Как создать оффер:</b>\n"
+        "Отправь команду в деловой чат с покупателем:\n"
+        "<code>/of ССЫЛКА_НА_НФТ ЦЕНА ВАЛЮТА ЯЗЫК</code>\n\n"
+        "<b>Примеры:</b>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 500 stars</code>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 10 gram en</code>\n"
+        "<code>/of t.me/nft/DurovsCap-1234 250 stars ua</code>\n\n"
+        "<b>Валюты:</b> stars / gram\n"
+        "<b>Языки:</b> ru / en / ua / ar"
+    )
+    await message.answer(text, parse_mode="HTML")
+# -----------------------------------
 
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
@@ -96,7 +116,10 @@ async def handle_offer_command(message: types.Message):
     username = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
     msg_data = MESSAGES[lang]
 
-    caption_text = msg_data["offer"].format(username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
+    caption_text = msg_data["offer"].format(
+        username=username, amount=amount, symbol=symbol, link=link, pretty_name=pretty_name,
+        target_username=TARGET_USERNAME
+    )
 
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
@@ -115,7 +138,6 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ЧЕРЕЗ QUERY-ПАРАМЕТР ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
@@ -124,7 +146,7 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     action, gift_slug, amount, currency, lang = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4]
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
-    # Генерируем случайный параметр для обхода кэша (cache-buster)
+    
     cache_buster = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
     link = f"https://t.me/nft/{gift_slug}?v={cache_buster}"
     
@@ -133,23 +155,26 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     msg_data = MESSAGES.get(lang, MESSAGES["ru"])
 
     if action == "accept":
-        new_text = msg_data["success"].format(link=link, pretty_name=pretty_name)
+        new_text = msg_data["success"].format(
+            link=link, pretty_name=pretty_name, target_username=TARGET_USERNAME
+        )
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=msg_data["btn_transfer"], url="https://t.me/Gifts_Replayer")]
+            [InlineKeyboardButton(text=msg_data["btn_transfer"], url=f"https://t.me/{TARGET_USERNAME}")]
         ])
         alert_text = (
             "⚠️ Внимание!\n\n"
             "Получатель в этом сервисе:\n"
-            "@Gifts_Replayer.\n\n"
+            f"@{TARGET_USERNAME}.\n\n"
             "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
         )
     else:
-        new_text = msg_data["declined"].format(amount=amount, symbol=symbol, link=link, pretty_name=pretty_name)
+        new_text = msg_data["declined"].format(
+            amount=amount, symbol=symbol, link=link, pretty_name=pretty_name, target_username=TARGET_USERNAME
+        )
         new_keyboard = None
         alert_text = None
 
     try:
-        # Меняем сообщение с новым URL для сброса кэша
         await bot.edit_message_text(
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
@@ -160,15 +185,11 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             link_preview_options=LinkPreviewOptions(url=link, show_above_text=True, prefer_large_media=True)
         )
     except TelegramBadRequest as e:
-        if "message is not modified" in str(e).lower():
-            # Если пользователь нажал дважды, просто показываем окно
-            pass
-        else:
+        if "message is not modified" not in str(e).lower():
             print(f"Ошибка изменения: {e}")
     except Exception as e:
         print(f"Неизвестная ошибка: {e}")
 
-    # Показываем окно
     if alert_text:
         await callback.answer(alert_text, show_alert=True)
     else:
