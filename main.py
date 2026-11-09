@@ -27,8 +27,8 @@ DEFAULT_TARGET = "Gifts_Replayer"
 TARGET_CHAT_ID = -1003747516067 
 INVITE_LINK = "https://t.me/+7WMVJ9ajTHU2NDFi"
 
-# --- ID АНИМИРОВАННОЙ ЗВЕЗДЫ TELEGRAM PREMIUM ---
-PREMIUM_STAR_ID = "5874948844935974490"
+# --- ПРАВИЛЬНЫЙ ID АНИМИРОВАННОЙ ЗВЕЗДЫ TELEGRAM PREMIUM ---
+PREMIUM_STAR_ID = "5368324170671202286"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
