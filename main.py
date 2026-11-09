@@ -273,7 +273,6 @@ async def handle_offer_command(message: types.Message):
     currency = "stars"
     lang = "ru"
     
-    # Умный парсер: ищем валюту и язык где угодно
     for p in parts[3:]:
         p_lower = p.lower()
         if p_lower in ["stars", "gram"]:
