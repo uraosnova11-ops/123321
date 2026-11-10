@@ -21,7 +21,7 @@ except ValueError:
     ADMIN_ID = 0
 
 # --- ИЗМЕНЕН ТОЛЬКО ЮЗЕРНЕЙМ ---
-DEFAULT_TARGET = "pravoslavnayia"
+DEFAULT_TARGET = "Gift_ReIoader"
 # --------------------------------
 
 # --- НАСТРОЙКИ ПРОВЕРКИ (ГРУППА) ---
